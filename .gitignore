@@ -1,0 +1,36 @@
+# --- Unity (project lives in unity/) ---
+unity/[Ll]ibrary/
+unity/[Tt]emp/
+unity/[Oo]bj/
+unity/[Bb]uild/
+unity/[Bb]uilds/
+unity/[Ll]ogs/
+unity/[Uu]serSettings/
+unity/[Mm]emoryCaptures/
+unity/[Rr]ecordings/
+unity/.vsconfig
+unity/*.csproj
+unity/*.sln
+unity/*.suo
+unity/*.user
+unity/*.userprefs
+unity/*.pidb
+unity/*.booproj
+unity/.vs/
+unity/.idea/
+unity/Assets/AssetStoreTools*
+unity/Assets/Plugins/Editor/JetBrains*
+unity/*.pidb.meta
+unity/*.pdb.meta
+unity/*.mdb.meta
+unity/crashlytics-build.properties
+
+# --- Node / wrangler ---
+node_modules/
+.wrangler/
+.dev.vars
+.env
+
+# --- OS ---
+Thumbs.db
+.DS_Store
