@@ -12,8 +12,10 @@ public static class BuildScript
         string projectRoot = Directory.GetParent(Application.dataPath).Parent.FullName;
         string outputDir = Path.Combine(projectRoot, "dist");
 
-        PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Disabled;
-        PlayerSettings.WebGL.decompressionFallback = false;
+        // Brotli + JS decompression fallback: Cloudflare static assets cap files at
+        // 25 MiB, and the fallback avoids any Content-Encoding header requirements.
+        PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Brotli;
+        PlayerSettings.WebGL.decompressionFallback = true;
         PlayerSettings.WebGL.exceptionSupport = WebGLExceptionSupport.None;
         PlayerSettings.WebGL.dataCaching = true;
         PlayerSettings.stripEngineCode = true;
