@@ -37,15 +37,19 @@ public static class BuildScript
             EditorApplication.Exit(1);
         }
 
-        // Left-click-only game: kill the browser context menu on the page.
+        // Post-process the template page: kill the browser context menu
+        // (left-click-only game) and expose the Unity instance for testing.
         string indexPath = Path.Combine(outputDir, "index.html");
         if (File.Exists(indexPath))
         {
             string html = File.ReadAllText(indexPath);
-            const string guard = "document.addEventListener('contextmenu'";
-            if (!html.Contains(guard))
-                File.WriteAllText(indexPath, html.Replace("</body>",
-                    "<script>document.addEventListener('contextmenu',function(e){e.preventDefault();});</script></body>"));
+            if (!html.Contains("contextmenu"))
+                html = html.Replace("</body>",
+                    "<script>document.addEventListener('contextmenu',function(e){e.preventDefault();});</script></body>");
+            const string thenHook = "}).then((unityInstance) => {";
+            if (html.Contains(thenHook) && !html.Contains("window.unityInstance"))
+                html = html.Replace(thenHook, thenHook + "\n                window.unityInstance = unityInstance;");
+            File.WriteAllText(indexPath, html);
         }
 
         Debug.Log($"WebGL build OK -> {outputDir} ({report.summary.totalSize / (1024 * 1024)} MB)");

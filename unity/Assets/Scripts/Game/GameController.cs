@@ -132,6 +132,37 @@ namespace Throughput.Game
 
         public void SetSpeed(float s) => _speed = s;
 
+        /// External test hook (browser: unityInstance.SendMessage('Bootstrap','DebugCmd',...)).
+        /// Commands: "place:cpu|gpu|pdu|crac:X:Y", "sell:X:Y", "toggle:X:Y",
+        /// "buyuplink", "substation", "speed:N", "state".
+        public void DebugCmd(string cmd)
+        {
+            string[] p = cmd.Split(':');
+            switch (p[0])
+            {
+                case "place":
+                {
+                    BuildingKind kind = p[1] == "gpu" ? BuildingKind.GpuRack
+                        : p[1] == "pdu" ? BuildingKind.Pdu
+                        : p[1] == "crac" ? BuildingKind.Crac : BuildingKind.CpuRack;
+                    Building b = _world.TryPlace(kind, int.Parse(p[2]), int.Parse(p[3]));
+                    Debug.Log($"[DebugCmd] place {p[1]} @{p[2]},{p[3]} -> {(b != null ? "OK" : "refused: " + _world.CheckPlace(kind, int.Parse(p[2]), int.Parse(p[3])).Reason)}");
+                    break;
+                }
+                case "sell": _world.TrySell(_world.BuildingIdAt(int.Parse(p[1]), int.Parse(p[2]))); break;
+                case "toggle": _world.ToggleBuilding(_world.BuildingIdAt(int.Parse(p[1]), int.Parse(p[2]))); break;
+                case "buyuplink": _world.BuyUplink(); break;
+                case "substation": _world.OrderSubstation(); break;
+                case "speed": SetSpeed(float.Parse(p[1])); break;
+                case "state":
+                    Debug.Log($"[DebugCmd] cash={_world.Cash:0} earned={_world.Earned:0} net={_world.NetPerSec:0.00} " +
+                              $"served={_world.ServedPf:0.0}/{_world.DemandCyanPf + _world.DemandPurplePf:0.0} " +
+                              $"feed={_world.FeedLoadKw:0}/{_world.FeedCapKw:0} bw={_world.BandwidthUsed:0.0}/{_world.BandwidthCap:0} " +
+                              $"racks={_world.RackCount} day={_world.Day}");
+                    break;
+            }
+        }
+
         private void Update()
         {
             if (_world == null) return;
