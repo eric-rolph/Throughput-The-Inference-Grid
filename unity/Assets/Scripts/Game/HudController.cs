@@ -5,159 +5,487 @@ using Throughput.Sim;
 
 namespace Throughput.Game
 {
-    /// Top bar, palette, ticker, spike banner, contract overlay cards.
+    /// All screen-space UI: top bar (6 widgets), left gutter (goals + contracts),
+    /// bottom toolbar (build chips + overlays + reason strip), docked inspect
+    /// panel, time controls, undo, ticker, contextual buy-chips. No modals.
     public sealed class HudController : MonoBehaviour
     {
-        private SimWorld _world;
+        private DcWorld _world;
         private GameController _game;
+        private Canvas _canvas;
 
-        private Text _cash, _goal, _slo, _breaches, _clock, _spikeBanner, _modeHint;
-        private RectTransform _paletteRow;
-        private readonly List<Button> _paletteButtons = new List<Button>();
-        private readonly List<NodeKind> _paletteKinds = new List<NodeKind>();
+        private Text _cash, _net, _served, _dayClock, _reasonStrip, _hintBanner;
+        private Image _powerFill, _bwFill, _servedFill;
+        private Text _powerLabel, _bwLabel;
+        private RectTransform _breakevenMark;
+
+        private RectTransform _goalRow1, _goalRow2;
+        private Text _goal1Text, _goal2Text;
+        private Image _goal1Progress;
+
+        private readonly RectTransform[] _contractCards = new RectTransform[2];
+        private readonly OfferState[] _cardState = { (OfferState)(-1), (OfferState)(-1) };
+
+        private readonly List<Button> _buildButtons = new List<Button>();
+        private readonly List<Text> _buildLabels = new List<Text>();
+        private static readonly BuildingKind[] BuildKinds =
+            { BuildingKind.CpuRack, BuildingKind.GpuRack, BuildingKind.Pdu, BuildingKind.Crac };
+
+        private Button _heatToggle, _powerToggle, _netToggle, _undoBtn;
+        private Button _uplinkChip, _feedChip;
+        private Text _uplinkChipText, _feedChipText;
+
+        private RectTransform _inspectPanel;
+        private Text _inspectTitle, _inspectStatus, _inspectStats;
+        private Button _toggleBtn, _sellBtn, _restartBtn;
+        private int _inspectId = -1;
+
         private readonly List<Text> _tickerLines = new List<Text>();
         private readonly List<float> _tickerAges = new List<float>();
-        private RectTransform _overlay;
-        private Canvas _canvas;
+        private float _hintLife;
 
         public void Init(GameController game)
         {
             _game = game;
             _canvas = UiBuilder.CreateCanvas("HUD");
+            BuildTopBar();
+            BuildLeftGutter();
+            BuildToolbar();
+            BuildInspectPanel();
+            BuildCorners();
+            BuildTicker();
+            BuildContextChips();
+        }
 
-            // ---- top bar
+        public void BindWorld(DcWorld world) => _world = world;
+
+        // ------------------------------------------------------------ builders
+
+        private void BuildTopBar()
+        {
             RectTransform top = UiBuilder.Panel(_canvas.transform, "TopBar", GameTheme.PanelBg);
-            UiBuilder.Place(top, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, -46), Vector2.zero);
+            UiBuilder.Place(top, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, -48), Vector2.zero);
 
-            _cash = UiBuilder.Label(top, "Cash", "$0", 24, GameTheme.Ok);
-            UiBuilder.Place(_cash.rectTransform, new Vector2(0, 0), new Vector2(0, 1), new Vector2(16, 0), new Vector2(240, 0));
-            _goal = UiBuilder.Label(top, "Goal", "", 18, GameTheme.TextBright, TextAnchor.MiddleCenter);
-            UiBuilder.Place(_goal.rectTransform, new Vector2(0.28f, 0), new Vector2(0.72f, 1), Vector2.zero, Vector2.zero);
-            _slo = UiBuilder.Label(top, "Slo", "SLO 100%", 18, GameTheme.TextDim);
-            UiBuilder.Place(_slo.rectTransform, new Vector2(0.74f, 0), new Vector2(0.85f, 1), Vector2.zero, Vector2.zero);
-            _breaches = UiBuilder.Label(top, "Breaches", "", 18, GameTheme.Danger);
-            UiBuilder.Place(_breaches.rectTransform, new Vector2(0.85f, 0), new Vector2(0.93f, 1), Vector2.zero, Vector2.zero);
-            _clock = UiBuilder.Label(top, "Clock", "0:00", 18, GameTheme.TextDim, TextAnchor.MiddleRight);
-            UiBuilder.Place(_clock.rectTransform, new Vector2(0.93f, 0), new Vector2(1, 1), Vector2.zero, new Vector2(-14, 0));
+            _cash = UiBuilder.Label(top, "Cash", "$10,000", 24, GameTheme.Ok);
+            UiBuilder.Place(_cash.rectTransform, new Vector2(0, 0), new Vector2(0.11f, 1), new Vector2(14, 0), Vector2.zero);
 
-            // ---- speed buttons
-            RectTransform speed = UiBuilder.Panel(_canvas.transform, "Speed", Color.clear);
-            UiBuilder.Place(speed, new Vector2(1, 1), new Vector2(1, 1), new Vector2(-170, -92), new Vector2(-10, -50));
-            string[] speeds = { "II", "1x", "2x", "4x" };
-            float[] mults = { 0f, 1f, 2f, 4f };
-            for (int i = 0; i < speeds.Length; i++)
+            _net = UiBuilder.Label(top, "Net", "NET +$0.0/s", 18, GameTheme.Ok);
+            UiBuilder.Place(_net.rectTransform, new Vector2(0.11f, 0), new Vector2(0.24f, 1), Vector2.zero, Vector2.zero);
+
+            _served = UiBuilder.Label(top, "Served", "0.0 / 0 PF", 16, GameTheme.TextBright);
+            UiBuilder.Place(_served.rectTransform, new Vector2(0.24f, 0.45f), new Vector2(0.44f, 1), Vector2.zero, Vector2.zero);
+            var servedBarBg = UiBuilder.Panel(top, "ServedBg", new Color(1, 1, 1, 0.08f));
+            UiBuilder.Place(servedBarBg, new Vector2(0.24f, 0.12f), new Vector2(0.44f, 0.42f), Vector2.zero, new Vector2(-8, 0));
+            _servedFill = UiBuilder.Panel(servedBarBg, "fill", GameTheme.JobCyan).GetComponent<Image>();
+            UiBuilder.Place(_servedFill.rectTransform, Vector2.zero, new Vector2(0f, 1f), Vector2.zero, Vector2.zero);
+            _breakevenMark = UiBuilder.Panel(servedBarBg, "breakeven", GameTheme.Warn);
+            UiBuilder.Place(_breakevenMark, Vector2.zero, new Vector2(0, 1), Vector2.zero, new Vector2(3, 0));
+
+            var pow = MakeBar(top, "Power", 0.46f, 0.62f, GameTheme.Warn, out _powerFill, out _powerLabel);
+            var bw = MakeBar(top, "Bw", 0.64f, 0.80f, GameTheme.JobCyan, out _bwFill, out _bwLabel);
+
+            _dayClock = UiBuilder.Label(top, "Clock", "", 16, GameTheme.TextDim, TextAnchor.MiddleRight);
+            UiBuilder.Place(_dayClock.rectTransform, new Vector2(0.81f, 0), new Vector2(1, 1), Vector2.zero, new Vector2(-12, 0));
+        }
+
+        private RectTransform MakeBar(Transform parent, string name, float x0, float x1, Color fillColor,
+                                       out Image fill, out Text label)
+        {
+            var bg = UiBuilder.Panel(parent, name + "Bg", new Color(1, 1, 1, 0.08f));
+            UiBuilder.Place(bg, new Vector2(x0, 0.2f), new Vector2(x1, 0.8f), Vector2.zero, Vector2.zero);
+            fill = UiBuilder.Panel(bg, "fill", fillColor).GetComponent<Image>();
+            UiBuilder.Place(fill.rectTransform, Vector2.zero, new Vector2(0f, 1f), Vector2.zero, Vector2.zero);
+            label = UiBuilder.Label(bg, "label", "", 14, GameTheme.TextBright, TextAnchor.MiddleCenter);
+            UiBuilder.Fill(label.rectTransform);
+            return bg;
+        }
+
+        private void BuildLeftGutter()
+        {
+            _goalRow1 = UiBuilder.Panel(_canvas.transform, "Goal1", GameTheme.ChipBg);
+            UiBuilder.Place(_goalRow1, new Vector2(0, 1), new Vector2(0, 1), new Vector2(10, -110), new Vector2(330, -58));
+            _goal1Text = UiBuilder.Label(_goalRow1, "txt", "", 18, GameTheme.TextBright, TextAnchor.MiddleLeft);
+            UiBuilder.Place(_goal1Text.rectTransform, Vector2.zero, Vector2.one, new Vector2(12, 0), new Vector2(-8, 0));
+            _goal1Progress = UiBuilder.Panel(_goalRow1, "prog", new Color(0.35f, 0.88f, 0.75f, 0.35f)).GetComponent<Image>();
+            UiBuilder.Place(_goal1Progress.rectTransform, Vector2.zero, new Vector2(0, 1), Vector2.zero, Vector2.zero);
+            _goal1Progress.transform.SetAsFirstSibling();
+
+            _goalRow2 = UiBuilder.Panel(_canvas.transform, "Goal2", new Color(0.06f, 0.08f, 0.12f, 0.7f));
+            UiBuilder.Place(_goalRow2, new Vector2(0, 1), new Vector2(0, 1), new Vector2(10, -152), new Vector2(330, -114));
+            _goal2Text = UiBuilder.Label(_goalRow2, "txt", "", 15, GameTheme.TextDim, TextAnchor.MiddleLeft);
+            UiBuilder.Place(_goal2Text.rectTransform, Vector2.zero, Vector2.one, new Vector2(12, 0), new Vector2(-8, 0));
+
+            for (int i = 0; i < 2; i++)
             {
-                float m = mults[i];
-                Button b = UiBuilder.TextButton(speed, "spd" + i, speeds[i], 16,
-                    new Color(0.12f, 0.16f, 0.24f, 0.9f), GameTheme.TextBright,
-                    () => _game.SetSpeed(m));
-                var rt = b.GetComponent<RectTransform>();
-                UiBuilder.Place(rt, new Vector2(i / 4f, 0), new Vector2((i + 1) / 4f, 1), new Vector2(2, 0), new Vector2(-2, 0));
+                _contractCards[i] = UiBuilder.Panel(_canvas.transform, "Contract" + i, GameTheme.PanelBg);
+                UiBuilder.Place(_contractCards[i], new Vector2(0, 1), new Vector2(0, 1),
+                    new Vector2(10, -352 - i * 210), new Vector2(330, -160 - i * 210));
+                _contractCards[i].gameObject.SetActive(false);
+            }
+        }
+
+        private void RebuildContractCard(int idx)
+        {
+            RectTransform card = _contractCards[idx];
+            foreach (Transform child in card) Destroy(child.gameObject);
+            Offer o = _world.Contracts.Offers[idx];
+            card.gameObject.SetActive(o.State == OfferState.Offered || o.State == OfferState.Active || o.State == OfferState.Fulfilled);
+            if (!card.gameObject.activeSelf) return;
+
+            Text title = UiBuilder.Label(card, "title", $"{o.Name}  [{o.Tag}]", 18,
+                o.State == OfferState.Fulfilled ? GameTheme.Ok : GameTheme.JobPurple);
+            UiBuilder.Place(title.rectTransform, new Vector2(0, 1), new Vector2(1, 1), new Vector2(12, -30), new Vector2(-8, -4));
+
+            string body =
+                $"▦ needs: {o.NeedsGpuOnline} GPU rack{(o.NeedsGpuOnline > 1 ? "s" : "")} online\n" +
+                $"$ advance: ${o.Advance:0} now\n" +
+                $"+ adds: {o.AddsPurplePf:0} PF (GPU jobs)\n" +
+                $"^ rate: +{(o.RateBonus - 1f) * 100f:0}% on its jobs\n" +
+                $"! by Day {o.DeadlineDay} · penalty ${o.Penalty:0}";
+            Text bodyT = UiBuilder.Label(card, "body", body, 14, GameTheme.TextBright, TextAnchor.UpperLeft);
+            UiBuilder.Place(bodyT.rectTransform, new Vector2(0, 0), new Vector2(1, 1), new Vector2(12, 40), new Vector2(-8, -32));
+
+            if (o.State == OfferState.Offered)
+            {
+                Button accept = UiBuilder.TextButton(card, "accept", "ACCEPT", 16,
+                    new Color(0.13f, 0.38f, 0.30f, 1f), GameTheme.TextBright,
+                    () => { _world.Contracts.Accept(idx, _world); RebuildContractCard(idx); });
+                UiBuilder.Place(accept.GetComponent<RectTransform>(), new Vector2(0, 0), new Vector2(0.55f, 0),
+                    new Vector2(12, 6), new Vector2(-4, 38));
+                Button pass = UiBuilder.TextButton(card, "pass", "PASS", 16,
+                    new Color(0.2f, 0.2f, 0.25f, 1f), GameTheme.TextDim,
+                    () => { _world.Contracts.Pass(idx, _world); RebuildContractCard(idx); });
+                UiBuilder.Place(pass.GetComponent<RectTransform>(), new Vector2(0.58f, 0), new Vector2(1, 0),
+                    new Vector2(4, 6), new Vector2(-12, 38));
+            }
+            else
+            {
+                string status = o.State == OfferState.Fulfilled ? "✓ CAPACITY ONLINE — bonus flowing"
+                    : $"ACTIVE — need {o.NeedsGpuOnline} GPU online by Day {o.DeadlineDay}";
+                Text st = UiBuilder.Label(card, "status", status, 14,
+                    o.State == OfferState.Fulfilled ? GameTheme.Ok : GameTheme.Warn, TextAnchor.MiddleLeft);
+                UiBuilder.Place(st.rectTransform, new Vector2(0, 0), new Vector2(1, 0), new Vector2(12, 6), new Vector2(-8, 38));
+            }
+        }
+
+        private void BuildToolbar()
+        {
+            RectTransform bar = UiBuilder.Panel(_canvas.transform, "Toolbar", GameTheme.PanelBg);
+            UiBuilder.Place(bar, new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(-430, 8), new Vector2(430, 78));
+
+            for (int i = 0; i < BuildKinds.Length; i++)
+            {
+                BuildingKind kind = BuildKinds[i];
+                BuildingSpec spec = Balance.Spec(kind);
+                int idx = i;
+                Button b = UiBuilder.TextButton(bar, "build" + i, $"{spec.Name}\n${spec.Cost:0}", 15,
+                    GameTheme.ChipBg, GameTheme.TextBright,
+                    () => _game.Input.BeginPlacement(kind));
+                UiBuilder.Place(b.GetComponent<RectTransform>(),
+                    new Vector2(i * 0.155f, 0), new Vector2(i * 0.155f + 0.15f, 1),
+                    new Vector2(6, 8), new Vector2(0, -8));
+                _buildButtons.Add(b);
+                _buildLabels.Add(b.GetComponentInChildren<Text>());
             }
 
-            // ---- spike banner
-            _spikeBanner = UiBuilder.Label(_canvas.transform, "Spike", "", 26, GameTheme.Warn, TextAnchor.MiddleCenter);
-            UiBuilder.Place(_spikeBanner.rectTransform, new Vector2(0.2f, 1), new Vector2(0.8f, 1), new Vector2(0, -100), new Vector2(0, -56));
+            _heatToggle = MakeToggle(bar, "HEAT", 0.66f, () => { _game.Renderer.ShowHeat = !_game.Renderer.ShowHeat; });
+            _powerToggle = MakeToggle(bar, "POWER", 0.77f, () => { _game.Renderer.ShowPower = !_game.Renderer.ShowPower; });
+            _netToggle = MakeToggle(bar, "NET", 0.88f, () => { _game.Renderer.ShowNetwork = !_game.Renderer.ShowNetwork; });
 
-            // ---- palette (bottom center)
-            _paletteRow = UiBuilder.Panel(_canvas.transform, "Palette", GameTheme.PanelBg);
-            UiBuilder.Place(_paletteRow, new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(-390, 8), new Vector2(390, 66));
+            _reasonStrip = UiBuilder.Label(_canvas.transform, "Reason", "", 17, GameTheme.Warn, TextAnchor.MiddleCenter);
+            UiBuilder.Place(_reasonStrip.rectTransform, new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(-430, 82), new Vector2(430, 108));
 
-            // ---- mode hint
-            _modeHint = UiBuilder.Label(_canvas.transform, "Hint", "", 16, GameTheme.TextDim, TextAnchor.MiddleCenter);
-            UiBuilder.Place(_modeHint.rectTransform, new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(-380, 70), new Vector2(380, 96));
+            _hintBanner = UiBuilder.Label(_canvas.transform, "Hint", "", 20, GameTheme.Warn, TextAnchor.MiddleCenter);
+            UiBuilder.Place(_hintBanner.rectTransform, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(-400, 120), new Vector2(400, 160));
+        }
 
-            // ---- ticker (bottom left)
+        private Button MakeToggle(Transform parent, string label, float x, System.Action onClick)
+        {
+            Button b = UiBuilder.TextButton(parent, "tog" + label, label, 13,
+                new Color(0.08f, 0.10f, 0.16f, 1f), GameTheme.TextDim, onClick);
+            UiBuilder.Place(b.GetComponent<RectTransform>(), new Vector2(x, 0.15f), new Vector2(x + 0.10f, 0.85f),
+                Vector2.zero, Vector2.zero);
+            return b;
+        }
+
+        private void BuildInspectPanel()
+        {
+            _inspectPanel = UiBuilder.Panel(_canvas.transform, "Inspect", GameTheme.PanelBg);
+            UiBuilder.Place(_inspectPanel, new Vector2(1, 0.5f), new Vector2(1, 0.5f), new Vector2(-300, -140), new Vector2(-8, 140));
+
+            _inspectTitle = UiBuilder.Label(_inspectPanel, "title", "", 20, GameTheme.TextBright);
+            UiBuilder.Place(_inspectTitle.rectTransform, new Vector2(0, 1), new Vector2(1, 1), new Vector2(12, -34), new Vector2(-30, -6));
+            _inspectStatus = UiBuilder.Label(_inspectPanel, "status", "", 15, GameTheme.Warn, TextAnchor.UpperLeft);
+            UiBuilder.Place(_inspectStatus.rectTransform, new Vector2(0, 1), new Vector2(1, 1), new Vector2(12, -80), new Vector2(-8, -38));
+            _inspectStats = UiBuilder.Label(_inspectPanel, "stats", "", 14, GameTheme.TextDim, TextAnchor.UpperLeft);
+            UiBuilder.Place(_inspectStats.rectTransform, new Vector2(0, 0), new Vector2(1, 1), new Vector2(12, 96), new Vector2(-8, -84));
+
+            _toggleBtn = UiBuilder.TextButton(_inspectPanel, "toggle", "TOGGLE OFF", 15,
+                new Color(0.16f, 0.20f, 0.30f, 1f), GameTheme.TextBright, () =>
+                { if (_inspectId >= 0) _world.ToggleBuilding(_inspectId); });
+            UiBuilder.Place(_toggleBtn.GetComponent<RectTransform>(), new Vector2(0, 0), new Vector2(0.5f, 0),
+                new Vector2(10, 52), new Vector2(-4, 90));
+
+            _sellBtn = UiBuilder.TextButton(_inspectPanel, "sell", "SELL", 15,
+                new Color(0.35f, 0.16f, 0.16f, 1f), GameTheme.TextBright, () =>
+                { if (_inspectId >= 0 && _world.TrySell(_inspectId)) CloseInspect(); });
+            UiBuilder.Place(_sellBtn.GetComponent<RectTransform>(), new Vector2(0.5f, 0), new Vector2(1, 0),
+                new Vector2(4, 52), new Vector2(-10, 90));
+
+            _restartBtn = UiBuilder.TextButton(_inspectPanel, "restart", "RESTART $400", 15,
+                new Color(0.35f, 0.28f, 0.10f, 1f), GameTheme.TextBright, () =>
+                { if (_inspectId >= 0) _world.RestartHeatShutdown(_inspectId); });
+            UiBuilder.Place(_restartBtn.GetComponent<RectTransform>(), new Vector2(0, 0), new Vector2(1, 0),
+                new Vector2(10, 8), new Vector2(-10, 46));
+
+            Button close = UiBuilder.TextButton(_inspectPanel, "close", "×", 20,
+                Color.clear, GameTheme.TextDim, CloseInspect);
+            UiBuilder.Place(close.GetComponent<RectTransform>(), new Vector2(1, 1), new Vector2(1, 1),
+                new Vector2(-30, -32), new Vector2(-4, -4));
+
+            _inspectPanel.gameObject.SetActive(false);
+        }
+
+        private void BuildCorners()
+        {
+            RectTransform speed = UiBuilder.Panel(_canvas.transform, "Speed", Color.clear);
+            UiBuilder.Place(speed, new Vector2(1, 1), new Vector2(1, 1), new Vector2(-250, -104), new Vector2(-8, -54));
+            string[] labels = { "II", "1x", "3x" };
+            float[] mults = { 0f, 1f, 3f };
+            for (int i = 0; i < 3; i++)
+            {
+                float m = mults[i];
+                Button b = UiBuilder.TextButton(speed, "spd" + i, labels[i], 17,
+                    new Color(0.12f, 0.16f, 0.24f, 0.95f), GameTheme.TextBright, () => _game.SetSpeed(m));
+                UiBuilder.Place(b.GetComponent<RectTransform>(), new Vector2(i / 3.6f, 0), new Vector2((i + 1) / 3.6f, 1),
+                    new Vector2(2, 0), new Vector2(-2, 0));
+            }
+            _undoBtn = UiBuilder.TextButton(speed, "undo", "UNDO", 15,
+                new Color(0.12f, 0.16f, 0.24f, 0.95f), GameTheme.TextBright, () => _world.TryUndo());
+            UiBuilder.Place(_undoBtn.GetComponent<RectTransform>(), new Vector2(0.85f, 0), new Vector2(1.55f, 1),
+                new Vector2(2, 0), new Vector2(-60, 0));
+        }
+
+        private void BuildTicker()
+        {
             for (int i = 0; i < 5; i++)
             {
-                Text t = UiBuilder.Label(_canvas.transform, "tick" + i, "", 15, GameTheme.TextDim);
-                UiBuilder.Place(t.rectTransform, new Vector2(0, 0), new Vector2(0.4f, 0),
-                    new Vector2(12, 108 + i * 22), new Vector2(0, 130 + i * 22));
+                Text t = UiBuilder.Label(_canvas.transform, "tick" + i, "", 14, GameTheme.TextDim);
+                UiBuilder.Place(t.rectTransform, new Vector2(0, 0), new Vector2(0.38f, 0),
+                    new Vector2(12, 120 + i * 21), new Vector2(0, 141 + i * 21));
                 _tickerLines.Add(t);
                 _tickerAges.Add(999f);
             }
         }
 
-        public void BindWorld(SimWorld world)
+        private void BuildContextChips()
         {
-            _world = world;
-            BuildPalette();
-            foreach (Text t in _tickerLines) t.text = "";
+            _uplinkChip = UiBuilder.TextButton(_canvas.transform, "uplinkChip", "", 14,
+                new Color(0.10f, 0.30f, 0.26f, 0.97f), GameTheme.TextBright, () => _world.BuyUplink());
+            var urt = _uplinkChip.GetComponent<RectTransform>();
+            urt.sizeDelta = new Vector2(210, 40);
+            _uplinkChipText = _uplinkChip.GetComponentInChildren<Text>();
+            _uplinkChip.gameObject.SetActive(false);
+
+            _feedChip = UiBuilder.TextButton(_canvas.transform, "feedChip", "", 14,
+                new Color(0.32f, 0.26f, 0.08f, 0.97f), GameTheme.TextBright, () => _world.OrderSubstation());
+            var frt = _feedChip.GetComponent<RectTransform>();
+            frt.sizeDelta = new Vector2(230, 40);
+            _feedChipText = _feedChip.GetComponentInChildren<Text>();
+            _feedChip.gameObject.SetActive(false);
         }
 
-        private void BuildPalette()
-        {
-            foreach (Button b in _paletteButtons) Destroy(b.gameObject);
-            _paletteButtons.Clear();
-            _paletteKinds.Clear();
+        // ------------------------------------------------------------ runtime
 
-            NodeKind[] kinds = _world.Contract.Palette;
-            int total = kinds.Length + 1; // + link tool
-            for (int i = 0; i < kinds.Length; i++)
-            {
-                NodeKind kind = kinds[i];
-                NodeSpec spec = Tuning.Spec(kind);
-                Button b = UiBuilder.TextButton(_paletteRow, "pal" + i,
-                    $"{spec.Name}\n${spec.Cost:0}", 15,
-                    new Color(0.10f, 0.14f, 0.22f, 1f), GameTheme.TextBright,
-                    () => _game.Input.BeginPlacement(kind));
-                var rt = b.GetComponent<RectTransform>();
-                UiBuilder.Place(rt, new Vector2((float)i / total, 0), new Vector2((float)(i + 1) / total, 1),
-                    new Vector2(4, 6), new Vector2(-4, -6));
-                _paletteButtons.Add(b);
-                _paletteKinds.Add(kind);
-            }
-            Button link = UiBuilder.TextButton(_paletteRow, "palLink",
-                "Fiber Link\n$2/tile", 15,
-                new Color(0.10f, 0.20f, 0.18f, 1f), GameTheme.Ok,
-                () => _game.Input.BeginLinkMode());
-            var lrt = link.GetComponent<RectTransform>();
-            UiBuilder.Place(lrt, new Vector2((float)kinds.Length / total, 0), new Vector2(1f, 1),
-                new Vector2(4, 6), new Vector2(-4, -6));
-            _paletteButtons.Add(link);
-            _paletteKinds.Add(NodeKind.Ingress); // sentinel, never disabled by cost
+        public void SetModeHint(string s) => _reasonStrip.text = s;
+
+        public void ShowHint(string s)
+        {
+            _hintBanner.text = s;
+            _hintLife = 4f;
         }
 
-        public void SetModeHint(string hint) => _modeHint.text = hint;
+        public void OpenInspect(int id)
+        {
+            _inspectId = id;
+            _inspectPanel.gameObject.SetActive(true);
+        }
+
+        public void CloseInspect()
+        {
+            _inspectId = -1;
+            _inspectPanel.gameObject.SetActive(false);
+        }
 
         private void Update()
         {
             if (_world == null) return;
 
-            _cash.text = $"${_world.Cash:0}";
+            _cash.text = $"${_world.Cash:N0}";
             _cash.color = _world.Cash < 0 ? GameTheme.Danger : GameTheme.Ok;
 
-            ContractSpec c = _world.Contract;
-            string goal;
-            if (c.EarnGoal > 0)
-                goal = $"C{c.Number} {c.Title}   —   earned ${_world.Earned:0} / ${c.EarnGoal:0}";
-            else
-                goal = $"C{c.Number} {c.Title}   —   survive {FormatTime(c.SurviveSeconds)}";
-            _goal.text = goal;
+            float net = _world.NetPerSec;
+            _net.text = $"NET {(net >= 0 ? "+" : "−")}${Mathf.Abs(net):0.0}/s";
+            _net.color = net >= 0 ? GameTheme.Ok : GameTheme.Danger;
 
-            _slo.text = $"SLO {(_world.InSloShare * 100f):0}%";
-            _slo.color = _world.InSloShare > 0.85f ? GameTheme.Ok :
-                         _world.InSloShare > 0.6f ? GameTheme.Warn : GameTheme.Danger;
-            _breaches.text = _world.Breaches > 0 ? $"breach {_world.Breaches}/3" : "";
-            _clock.text = FormatTime(_world.Time);
+            float demand = _world.DemandCyanPf + _world.DemandPurplePf;
+            _served.text = $"{_world.ServedPf:0.0}/{demand:0.0} PF   queue {_world.QueueDepth:0.0}";
+            float servedFrac = demand > 0 ? Mathf.Clamp01(_world.ServedPf / demand) : 0f;
+            _servedFill.rectTransform.anchorMax = new Vector2(servedFrac, 1f);
+            float bkFrac = demand > 0 ? Mathf.Clamp01(_world.BreakevenPf / demand) : 0f;
+            _breakevenMark.anchorMin = new Vector2(bkFrac, 0);
+            _breakevenMark.anchorMax = new Vector2(bkFrac, 1);
 
-            if (_world.SpikeActive)
-            { _spikeBanner.text = "⚡ TRAFFIC SPIKE ⚡"; _spikeBanner.color = GameTheme.Danger; }
-            else if (_world.SpikeWarning)
-            { _spikeBanner.text = $"spike inbound — {_world.SpikeCountdown:0}s"; _spikeBanner.color = GameTheme.Warn; }
-            else _spikeBanner.text = "";
+            float powFrac = Mathf.Clamp01(_world.FeedLoadKw / _world.FeedCapKw);
+            _powerFill.rectTransform.anchorMax = new Vector2(powFrac, 1f);
+            _powerFill.color = powFrac > 0.9f ? GameTheme.Danger : GameTheme.Warn;
+            string sub = _world.SubstationEta > 0 ? $"  (+500 in {_world.SubstationEta:0}s)" : "";
+            _powerLabel.text = $"{_world.FeedLoadKw:0}/{_world.FeedCapKw:0} kW{sub}";
 
-            // Palette affordability
-            for (int i = 0; i < _paletteButtons.Count; i++)
+            float bwFrac = Mathf.Clamp01(_world.BandwidthUsed / _world.BandwidthCap);
+            _bwFill.rectTransform.anchorMax = new Vector2(bwFrac, 1f);
+            _bwLabel.text = $"{_world.BandwidthUsed:0.0}/{_world.BandwidthCap:0} Gbps";
+
+            _dayClock.text = $"Day {_world.Day}  {FormatClock(_world.ClockHours)}   ${_world.PricePerKwS:0.000}/kWs {(_world.PriceRising ? "▲" : "▼")}";
+
+            UpdateGoals();
+            UpdateContracts();
+            UpdateBuildButtons();
+            UpdateContextChips();
+            UpdateInspect();
+            DrainTicker();
+
+            if (_hintLife > 0f)
             {
-                bool affordable = i >= _paletteKinds.Count - 1 ||
-                                  _world.Cash >= Tuning.Spec(_paletteKinds[i]).Cost;
-                _paletteButtons[i].interactable = affordable;
-                var txt = _paletteButtons[i].GetComponentInChildren<Text>();
-                if (txt != null) txt.color = affordable ? GameTheme.TextBright : GameTheme.TextDim;
+                _hintLife -= Time.deltaTime;
+                Color c = _hintBanner.color; c.a = Mathf.Clamp01(_hintLife); _hintBanner.color = c;
+                if (_hintLife <= 0f) _hintBanner.text = "";
+            }
+        }
+
+        private void UpdateGoals()
+        {
+            GoalChip cur = _world.Goals.Current;
+            GoalChip next = _world.Goals.Next;
+            _goalRow1.gameObject.SetActive(cur != null);
+            if (cur != null)
+            {
+                _goal1Text.text = cur.Text + (cur.Reward > 0 ? $"  (+${cur.Reward:0})" : "");
+                _goal1Progress.rectTransform.anchorMax = new Vector2(cur.HasProgress ? cur.Progress : 0f, 1f);
+            }
+            _goalRow2.gameObject.SetActive(next != null);
+            if (next != null) _goal2Text.text = "next: " + next.Text;
+        }
+
+        private void UpdateContracts()
+        {
+            for (int i = 0; i < 2; i++)
+            {
+                OfferState s = _world.Contracts.Offers[i].State;
+                if (s != _cardState[i]) { _cardState[i] = s; RebuildContractCard(i); }
+            }
+        }
+
+        private void UpdateBuildButtons()
+        {
+            for (int i = 0; i < BuildKinds.Length; i++)
+            {
+                BuildingKind kind = BuildKinds[i];
+                BuildingSpec spec = Balance.Spec(kind);
+                bool locked = (kind == BuildingKind.GpuRack && !_world.GpuUnlocked) ||
+                              (kind == BuildingKind.Crac && !_world.CracUnlocked);
+                bool affordable = _world.Cash >= spec.Cost;
+                _buildButtons[i].interactable = !locked && affordable;
+                if (locked)
+                {
+                    _buildLabels[i].text = kind == BuildingKind.GpuRack
+                        ? $"GPU Rack\n🔒 ${Balance.GpuEarnedGate:0} earned" : $"{spec.Name}\n🔒";
+                    _buildLabels[i].color = GameTheme.TextDim;
+                }
+                else
+                {
+                    _buildLabels[i].text = $"{spec.Name}\n${spec.Cost:0}";
+                    _buildLabels[i].color = affordable ? GameTheme.TextBright : GameTheme.TextDim;
+                }
             }
 
-            DrainTicker();
+            _undoBtn.interactable = _world.CanUndo;
+            SetToggleTint(_heatToggle, _game.Renderer.ShowHeat);
+            SetToggleTint(_powerToggle, _game.Renderer.ShowPower);
+            SetToggleTint(_netToggle, _game.Renderer.ShowNetwork);
+        }
+
+        private void SetToggleTint(Button b, bool on)
+        {
+            b.GetComponent<Image>().color = on ? new Color(0.16f, 0.32f, 0.30f, 1f) : new Color(0.08f, 0.10f, 0.16f, 1f);
+            b.GetComponentInChildren<Text>().color = on ? GameTheme.Ok : GameTheme.TextDim;
+        }
+
+        private void UpdateContextChips()
+        {
+            // Uplink upgrade chip at >=80% bandwidth
+            bool showUplink = _world.BandwidthUsed >= _world.BandwidthCap * 0.8f;
+            _uplinkChip.gameObject.SetActive(showUplink);
+            if (showUplink)
+            {
+                Building up = _world.Buildings[1];
+                _uplinkChip.GetComponent<RectTransform>().position =
+                    _game.Cam.WorldToScreenPoint(new Vector3(up.X + 2.6f, up.Y + 1.6f, 0));
+                _uplinkChipText.text = $"+10 Gbps — ${Balance.UplinkUpgradeCost:0}";
+                _uplinkChip.interactable = _world.Cash >= Balance.UplinkUpgradeCost;
+            }
+
+            bool showFeed = _world.FeedLoadKw >= _world.FeedCapKw * 0.8f && _world.SubstationEta < 0f;
+            _feedChip.gameObject.SetActive(showFeed);
+            if (showFeed)
+            {
+                Building feed = _world.Buildings[0];
+                _feedChip.GetComponent<RectTransform>().position =
+                    _game.Cam.WorldToScreenPoint(new Vector3(feed.X + 0.5f, feed.Y - 1.2f, 0));
+                _feedChipText.text = $"+500 kW — ${Balance.SubstationCost:0} · 90s";
+                _feedChip.interactable = _world.Cash >= Balance.SubstationCost;
+            }
+        }
+
+        private void UpdateInspect()
+        {
+            if (_inspectId < 0 || !_inspectPanel.gameObject.activeSelf) return;
+            Building b = _world.Buildings[_inspectId];
+            if (b.Removed) { CloseInspect(); return; }
+            BuildingSpec spec = b.Spec;
+
+            _inspectTitle.text = spec.Name;
+            _inspectStatus.text = StatusLine(b);
+            _inspectStatus.color = b.State == BuildingState.Online && !b.ToggledOff ? GameTheme.Ok : GameTheme.Warn;
+
+            string stats = $"draw {spec.DrawKw:0} kW · tile {b.TileTemp:0}°";
+            if (spec.IsRack)
+                stats += $"\nserving {b.ServedPf:0.0}/{spec.ComputePf:0} PF · {spec.BandwidthGbps:0} Gbps\nrevenue ${b.RevenueRate:0.00}/s";
+            if (spec.PduCapKw > 0)
+                stats += $"\nload {_world.PduLoad(b.Id):0}/{spec.PduCapKw:0} kW";
+            _inspectStats.text = stats;
+
+            _toggleBtn.GetComponentInChildren<Text>().text = b.ToggledOff ? "POWER ON" : "TOGGLE OFF";
+            bool sellable = !b.PrePlaced;
+            _sellBtn.gameObject.SetActive(sellable);
+            _restartBtn.gameObject.SetActive(b.State == BuildingState.HeatShutdown);
+        }
+
+        private string StatusLine(Building b)
+        {
+            if (b.ToggledOff) return "Powered down by operator";
+            switch (b.State)
+            {
+                case BuildingState.Booting: return $"Booting — {b.BootRemaining:0.0}s";
+                case BuildingState.TrippedDark: return $"DARK — breaker tripped, {b.DarkRemaining:0.0}s";
+                case BuildingState.HeatShutdown: return $"THERMAL SHUTDOWN at {b.TileTemp:0}° — cool below 60°, restart $400";
+                default:
+                    if (b.NoUplinkFlag) return "NO UPLINK — bandwidth saturated";
+                    if (b.TileTemp >= Balance.HotTemp) return $"Throttled −50%: {b.TileTemp:0}° — no cooling in range";
+                    if (b.TileTemp >= Balance.WarmTemp) return $"Throttled −25%: {b.TileTemp:0}° — running warm";
+                    if (b.Spec.IsRack && b.ServedPf <= 0.01f) return "Starving — no demand reaching it";
+                    return "Online";
+            }
         }
 
         private void DrainTicker()
@@ -181,44 +509,15 @@ namespace Throughput.Game
             {
                 _tickerAges[i] += Time.deltaTime;
                 Color col = _tickerLines[i].color;
-                col.a = Mathf.Clamp01(1.4f - _tickerAges[i] / 9f);
+                col.a = Mathf.Clamp01(1.5f - _tickerAges[i] / 10f);
                 _tickerLines[i].color = col;
             }
         }
 
-        private static string FormatTime(float seconds)
+        private static string FormatClock(float hours)
         {
-            int m = (int)(seconds / 60f), s = (int)(seconds % 60f);
-            return $"{m}:{s:00}";
-        }
-
-        // ------------------------------------------------------- overlay cards
-
-        public void ShowCard(string title, string body, string buttonLabel, System.Action onClick)
-        {
-            HideCard();
-            _overlay = UiBuilder.Panel(_canvas.transform, "Overlay", new Color(0.02f, 0.03f, 0.05f, 0.88f));
-            UiBuilder.Fill(_overlay);
-
-            RectTransform card = UiBuilder.Panel(_overlay, "Card", new Color(0.06f, 0.08f, 0.13f, 0.98f));
-            UiBuilder.Place(card, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f), new Vector2(-380, -270), new Vector2(380, 270));
-
-            Text t = UiBuilder.Label(card, "Title", title, 30, GameTheme.NodeOutline, TextAnchor.MiddleCenter);
-            UiBuilder.Place(t.rectTransform, new Vector2(0, 1), new Vector2(1, 1), new Vector2(0, -70), new Vector2(0, -12));
-
-            Text b = UiBuilder.Label(card, "Body", body, 18, GameTheme.TextBright, TextAnchor.UpperLeft);
-            b.horizontalOverflow = HorizontalWrapMode.Wrap;
-            UiBuilder.Place(b.rectTransform, new Vector2(0, 0), new Vector2(1, 1), new Vector2(36, 86), new Vector2(-36, -84));
-
-            Button btn = UiBuilder.TextButton(card, "Go", buttonLabel, 22,
-                new Color(0.13f, 0.35f, 0.30f, 1f), GameTheme.TextBright, onClick);
-            UiBuilder.Place(btn.GetComponent<RectTransform>(), new Vector2(0.5f, 0), new Vector2(0.5f, 0),
-                new Vector2(-130, 16), new Vector2(130, 68));
-        }
-
-        public void HideCard()
-        {
-            if (_overlay != null) { Destroy(_overlay.gameObject); _overlay = null; }
+            int h = (int)hours, m = (int)((hours - h) * 60f);
+            return $"{h:00}:{m:00}";
         }
     }
 }

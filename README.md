@@ -1,10 +1,14 @@
 # Throughput: The Inference Grid
 
-A resource-management sim about architecting an enterprise AI-inference network.
-Route torrents of request packets through routers, load balancers, caches, and model
-servers — balancing compute cycles, API-token spend, bandwidth, and latency SLAs.
-Manual routing gives way to Infrastructure-as-Code automation, and finally to a fully
-autonomous, self-healing grid.
+A data-center builder. You're handed an empty, dark server hall with a live grid
+feed and a fiber uplink already humming — deploy racks, feed them power, keep them
+cool, keep them connected, and watch a river of glowing inference jobs turn into
+money. Density is profit. Density is heat. Every tile you click is a tradeoff.
+
+Four interlocking systems: **power** (PDU budgets, breaker trips), **heat**
+(radial fields, throttling, thermal shutdown), **bandwidth** (uplink saturation),
+and **money** (time-of-day electricity prices vs compute revenue). Left-click
+only. No modals. The first breaker trip is the tutorial.
 
 Built with **Unity (WebGL)**. Deployed as a **Cloudflare Worker** with static assets.
 
@@ -16,11 +20,13 @@ https://throughput-the-inference-grid.ericrolph.workers.dev
 
 | Path | Purpose |
 | --- | --- |
-| `unity/` | Unity project (Unity 6000.3 LTS, 2D URP) |
+| `unity/` | Unity project (Unity 6000.3 LTS, 2D) |
 | `dist/` | Committed WebGL build output — served by the Worker |
 | `wrangler.jsonc` | Cloudflare Worker config (static assets from `dist/`) |
 | `.github/workflows/deploy.yml` | Deploys `dist/` to Cloudflare on every push to `main` |
-| `docs/` | Game design document & implementation plan |
+| `docs/DESIGN2.md` | Current game design (v2 — data-center builder) |
+| `docs/BUILDSPEC.md` | v2 implementation plan |
+| `docs/DESIGN.md` | v1 design (packet routing — superseded after playtest) |
 
 ## Deploy pipeline
 
