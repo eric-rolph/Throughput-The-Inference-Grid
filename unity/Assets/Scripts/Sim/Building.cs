@@ -30,8 +30,11 @@ namespace Throughput.Sim
         public float BootRemaining;
         public float DarkRemaining;       // TrippedDark countdown
         public float OverloadTimer;       // PDU only
+        public BuildingState StateBeforeTrip;
+        public bool HasStateBeforeTrip;
         public bool ToggledOff;
         public bool NoUplinkFlag;
+        public bool HasPower;
         public long PlacedTick;
 
         public float ServedPf;            // current tick's fill
@@ -44,7 +47,7 @@ namespace Throughput.Sim
         public BuildingSpec Spec => Balance.Spec(Kind);
 
         public bool Producing =>
-            State == BuildingState.Online && !ToggledOff && !NoUplinkFlag;
+            State == BuildingState.Online && HasPower && !NoUplinkFlag;
 
         /// Draws grid power (full watts) in every state except off/dark.
         public bool DrawsPower =>

@@ -1,0 +1,20 @@
+name: Simulation Tests
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+      - name: Run headless simulation tests
+        run: dotnet test Tests/SimTests/Throughput.SimTests.csproj --configuration Release

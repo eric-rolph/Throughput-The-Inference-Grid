@@ -24,7 +24,7 @@ namespace Throughput.Sim
         public long Tick { get; private set; }
         public float Elapsed => Tick * Balance.TickDt;
         public float Cash { get; private set; } = Balance.StartingCash;
-        public float Earned { get; private set; }           // revenue + rewards + advances
+        public float Earned { get; private set; }           // revenue + goal rewards; excludes financing
         public float RevenuePerSec { get; private set; }
         public float PowerCostPerSec { get; private set; }
         public float NetPerSec => RevenuePerSec - PowerCostPerSec;
@@ -32,7 +32,8 @@ namespace Throughput.Sim
         public float FeedCapKw { get; private set; } = Balance.FeedCapKw;
         public float FeedLoadKw { get; private set; }
         public float BandwidthCap { get; private set; } = Balance.UplinkGbps;
-        public float BandwidthUsed { get; private set; }
+        public float BandwidthUsed { get; private set; }     // attempted by powered online racks
+        public float BandwidthAccepted { get; private set; } // connected subset
         public float SubstationEta { get; private set; } = -1f;
 
         public float DemandCyanPf { get; private set; }
@@ -81,7 +82,7 @@ namespace Throughput.Sim
         public void Ticker(string msg, byte severity) =>
             TickerEvents.Add(new TickerEvent { Message = msg, Severity = severity });
         public void EmitChime(byte kind) => ChimeEvents.Add(new ChimeEvent { Kind = kind });
-        public void ReceiveAdvance(float amt) { Cash += amt; Earned += amt; AnyContractSigned = true; }
+        public void ReceiveAdvance(float amt) { Cash += amt; AnyContractSigned = true; }
         public void ReceiveReward(float amt) { Cash += amt; Earned += amt; }
         public void PayPenalty(float amt) { Cash -= amt; }
 
@@ -92,7 +93,7 @@ namespace Throughput.Sim
             Tick++;
             float dt = Balance.TickDt;
 
-            StepClock(dt);
+            StepClock();
             StepPower(dt);
             if (_heatDirty || Tick % Balance.HeatRebuildTicks == 0)
             {
@@ -107,12 +108,20 @@ namespace Throughput.Sim
             StepTimers(dt);
         }
 
-        private void StepClock(float dt)
+        private void StepClock()
         {
             float prevPrice = PricePerKwS;
-            float hoursPerSecond = 24f / Balance.DaySeconds;
-            ClockHours += dt * hoursPerSecond;
-            if (ClockHours >= 24f) { ClockHours -= 24f; Day++; Ticker($"Day {Day} — demand keeps climbing", 0); }
+            double simSeconds = Tick * (double)Balance.TickDt;
+            int newDay = 1 + (int)(simSeconds / Balance.DaySeconds);
+            if (newDay > Day)
+            {
+                Day = newDay;
+                Ticker($"Day {Day} — demand keeps climbing", 0);
+            }
+            double secondsIntoDay = simSeconds - (Day - 1) * Balance.DaySeconds;
+            double hour = Balance.StartHour + secondsIntoDay * 24.0 / Balance.DaySeconds;
+            if (hour >= 24.0) hour -= 24.0;
+            ClockHours = (float)hour;
             PricePerKwS = Balance.Price(Day, ClockHours);
             PriceRising = PricePerKwS >= prevPrice;
 
@@ -126,25 +135,26 @@ namespace Throughput.Sim
 
         private void StepPower(float dt)
         {
-            // Assign every powered non-PDU building to a covering live PDU.
+            // Assign PDU topology, then resolve whether electricity is actually available.
             foreach (Building b in Buildings)
             {
-                if (b.Removed || b.Kind == BuildingKind.Pdu ||
-                    b.Kind == BuildingKind.GridFeed || b.Kind == BuildingKind.Uplink) continue;
-                b.PduId = FindCoveringPdu(b.X, b.Y);
-            }
+                if (b.Removed)
+                {
+                    b.HasPower = false;
+                    continue;
+                }
 
-            // Sum loads.
-            FeedLoadKw = 0f;
-            foreach (Building b in Buildings)
-            {
-                if (b.Removed || !b.DrawsPower) continue;
-                if (b.Kind == BuildingKind.GridFeed || b.State == BuildingState.HeatShutdown) continue;
                 bool needsPdu = b.Kind == BuildingKind.CpuRack || b.Kind == BuildingKind.GpuRack ||
                                 b.Kind == BuildingKind.Crac;
-                if (needsPdu && b.PduId < 0) continue; // unpowered — no draw
-                FeedLoadKw += b.Spec.DrawKw;
+                if (needsPdu) b.PduId = FindCoveringPdu(b.X, b.Y);
+
+                bool canReceive = !b.ToggledOff && b.State != BuildingState.TrippedDark;
+                b.HasPower = needsPdu
+                    ? canReceive && b.PduId >= 0 && PduIsOperational(Buildings[b.PduId])
+                    : canReceive;
             }
+
+            RefreshFeedLoad();
 
             // Per-PDU overload → trip.
             foreach (Building pdu in Buildings)
@@ -161,6 +171,20 @@ namespace Throughput.Sim
                 }
                 else pdu.OverloadTimer = 0f;
             }
+
+            // A trip changes effective power during this tick.
+            RefreshFeedLoad();
+        }
+
+        private void RefreshFeedLoad()
+        {
+            FeedLoadKw = 0f;
+            foreach (Building b in Buildings)
+            {
+                if (b.Removed || !b.HasPower || !b.DrawsPower) continue;
+                if (b.Kind == BuildingKind.GridFeed || b.State == BuildingState.HeatShutdown) continue;
+                FeedLoadKw += b.Spec.DrawKw;
+            }
         }
 
         public float PduLoad(int pduId)
@@ -168,21 +192,37 @@ namespace Throughput.Sim
             float load = 0f;
             foreach (Building b in Buildings)
                 if (!b.Removed && b.PduId == pduId && b.DrawsPower &&
-                    b.State != BuildingState.HeatShutdown)
+                    b.HasPower && b.State != BuildingState.HeatShutdown)
                     load += b.Spec.DrawKw;
             return load;
         }
 
+        private static bool PduIsOperational(Building pdu) =>
+            !pdu.Removed && pdu.Kind == BuildingKind.Pdu &&
+            pdu.State == BuildingState.Online && !pdu.ToggledOff;
+
         private void TripPdu(Building pdu)
         {
+            if (!pdu.HasStateBeforeTrip)
+            {
+                pdu.StateBeforeTrip = pdu.State;
+                pdu.HasStateBeforeTrip = true;
+            }
             pdu.State = BuildingState.TrippedDark;
+            pdu.HasPower = false;
             pdu.DarkRemaining = Balance.DarkSeconds;
             pdu.OverloadTimer = 0f;
             int stage = 0;
             foreach (Building b in Buildings)
             {
                 if (b.Removed || b.PduId != pdu.Id) continue;
+                if (!b.HasStateBeforeTrip)
+                {
+                    b.StateBeforeTrip = b.State;
+                    b.HasStateBeforeTrip = true;
+                }
                 b.State = BuildingState.TrippedDark;
+                b.HasPower = false;
                 b.DarkRemaining = Balance.DarkSeconds + Balance.RebootStagger * (++stage);
             }
             _heatDirty = true;
@@ -197,7 +237,6 @@ namespace Throughput.Sim
             foreach (Building p in Buildings)
             {
                 if (p.Removed || p.Kind != BuildingKind.Pdu) continue;
-                if (p.ToggledOff) continue;
                 float d = Vector2.Distance(new Vector2(p.X, p.Y), new Vector2(x, y));
                 if (d <= p.Spec.Radius && d < bestD) { bestD = d; best = p.Id; }
             }
@@ -229,24 +268,37 @@ namespace Throughput.Sim
             // Bandwidth: newest racks over cap get NO UPLINK.
             _rackScratch.Clear();
             foreach (Building b in Buildings)
-                if (!b.Removed && b.Spec.IsRack && b.State == BuildingState.Online && !b.ToggledOff)
+            {
+                if (b.Removed || !b.Spec.IsRack) continue;
+                b.ServedPf = 0f;
+                b.ServedPurplePf = 0f;
+                b.RevenueRate = 0f;
+                b.NoUplinkFlag = false;
+                if (b.State == BuildingState.Online && b.HasPower)
                     _rackScratch.Add(b);
-            _rackScratch.Sort((a, b) => a.PlacedTick.CompareTo(b.PlacedTick));
+            }
+            _rackScratch.Sort((a, b) =>
+            {
+                int tickOrder = a.PlacedTick.CompareTo(b.PlacedTick);
+                return tickOrder != 0 ? tickOrder : a.Id.CompareTo(b.Id);
+            });
 
             float bw = 0f;
+            float acceptedBw = 0f;
             BandwidthUsed = 0f;
             foreach (Building b in _rackScratch)
             {
                 bw += b.Spec.BandwidthGbps;
                 b.NoUplinkFlag = bw > BandwidthCap;
-                if (!b.NoUplinkFlag) BandwidthUsed += b.Spec.BandwidthGbps;
+                if (!b.NoUplinkFlag) acceptedBw += b.Spec.BandwidthGbps;
             }
+            BandwidthUsed = bw;
+            BandwidthAccepted = acceptedBw;
 
             // Per-rack fill, oldest-first: contract purple → ambient purple (GPU) → cyan (all).
             CapacityPf = 0f;
             foreach (Building b in _rackScratch)
             {
-                b.ServedPf = 0f; b.ServedPurplePf = 0f; b.RevenueRate = 0f;
                 if (b.Producing) CapacityPf += b.Spec.ComputePf * b.ThrottleMult;
             }
 
@@ -316,7 +368,7 @@ namespace Throughput.Sim
                 if (b.Spec.IsRack)
                 {
                     RackCount++;
-                    if (b.State == BuildingState.Online && !b.ToggledOff)
+                    if (b.Producing)
                     {
                         OnlineItKw += b.Spec.DrawKw;
                         if (b.Kind == BuildingKind.GpuRack) GpuOnlineCount++;
@@ -377,12 +429,20 @@ namespace Throughput.Sim
                     b.DarkRemaining -= dt;
                     if (b.DarkRemaining <= 0f)
                     {
-                        b.State = BuildingState.Booting;
-                        b.BootRemaining = 0.5f;
+                        BuildingState previous = b.HasStateBeforeTrip
+                            ? b.StateBeforeTrip : BuildingState.Booting;
+                        b.HasStateBeforeTrip = false;
+                        if (previous == BuildingState.HeatShutdown)
+                            b.State = BuildingState.HeatShutdown;
+                        else
+                        {
+                            b.State = BuildingState.Booting;
+                            b.BootRemaining = 0.5f;
+                        }
                         _heatDirty = true;
                     }
                 }
-                else if (b.State == BuildingState.Booting)
+                else if (b.State == BuildingState.Booting && b.HasPower)
                 {
                     b.BootRemaining -= dt;
                     if (b.BootRemaining <= 0f)
@@ -405,7 +465,7 @@ namespace Throughput.Sim
             { chk.Verdict = Verdict.Red; chk.Reason = "Tile occupied"; return chk; }
             if (Cash < spec.Cost)
             { chk.Verdict = Verdict.Red; chk.Reason = "Not enough cash"; return chk; }
-            if (FeedLoadKw + spec.DrawKw > FeedCapKw)
+            if (ProjectedFeedLoadKw() + spec.DrawKw > FeedCapKw)
             { chk.Verdict = Verdict.Red; chk.Reason = "Grid feed maxed — order substation"; return chk; }
 
             bool needsRing = k == BuildingKind.CpuRack || k == BuildingKind.GpuRack || k == BuildingKind.Crac;
@@ -416,21 +476,99 @@ namespace Throughput.Sim
             // Amber warnings (placement allowed, consequences yours)
             if (needsRing)
             {
-                float load = PduLoad(pduId) + spec.DrawKw;
+                float load = ProjectedPduLoad(pduId) + spec.DrawKw;
                 float cap = Buildings[pduId].Spec.PduCapKw;
-                if (load > cap)
+                if (load >= cap * Balance.AmberAt)
                 {
                     chk.Verdict = Verdict.Amber;
-                    chk.Reason = $"PDU at {load / cap * 100f:0}% — breaker will trip";
+                    chk.Reason = load > cap
+                        ? $"PDU at {load / cap * 100f:0}% — breaker will trip"
+                        : $"PDU at {load / cap * 100f:0}% — near breaker limit";
+                    return chk;
+                }
+            }
+            else if (k == BuildingKind.Pdu)
+            {
+                float adoptedLoad = ProjectedCandidatePduLoad(x, y);
+                if (adoptedLoad >= spec.PduCapKw * Balance.AmberAt)
+                {
+                    chk.Verdict = Verdict.Amber;
+                    chk.Reason = adoptedLoad > spec.PduCapKw
+                        ? $"PDU adopts {adoptedLoad / spec.PduCapKw * 100f:0}% — breaker will trip"
+                        : $"PDU adopts {adoptedLoad / spec.PduCapKw * 100f:0}% — near breaker limit";
                     return chk;
                 }
             }
             if (spec.IsRack && Heat.At(x, y) >= Balance.WarmTemp)
             { chk.Verdict = Verdict.Amber; chk.Reason = "Too hot here — will throttle"; return chk; }
-            if (spec.IsRack && BandwidthUsed + spec.BandwidthGbps > BandwidthCap)
+            if (spec.IsRack && ProjectedBandwidthDemand() + spec.BandwidthGbps > BandwidthCap)
             { chk.Verdict = Verdict.Amber; chk.Reason = "Uplink saturated — rack will idle"; return chk; }
 
             return chk;
+        }
+
+        private float ProjectedBandwidthDemand()
+        {
+            float demand = 0f;
+            foreach (Building b in Buildings)
+            {
+                if (b.Removed || !b.Spec.IsRack) continue;
+                demand += b.Spec.BandwidthGbps;
+            }
+            return demand;
+        }
+
+        private float ProjectedPduLoad(int pduId)
+        {
+            float load = 0f;
+            foreach (Building b in Buildings)
+            {
+                if (b.Removed) continue;
+
+                bool needsPdu = b.Kind == BuildingKind.CpuRack || b.Kind == BuildingKind.GpuRack ||
+                                b.Kind == BuildingKind.Crac;
+                if (needsPdu && FindCoveringPdu(b.X, b.Y) == pduId)
+                    load += b.Spec.DrawKw;
+            }
+            return load;
+        }
+
+        private float ProjectedCandidatePduLoad(int x, int y)
+        {
+            BuildingSpec candidate = Balance.Spec(BuildingKind.Pdu);
+            var candidatePos = new Vector2(x, y);
+            float load = 0f;
+            foreach (Building b in Buildings)
+            {
+                if (b.Removed) continue;
+                bool needsPdu = b.Kind == BuildingKind.CpuRack || b.Kind == BuildingKind.GpuRack ||
+                                b.Kind == BuildingKind.Crac;
+                if (!needsPdu) continue;
+
+                float candidateDistance = Vector2.Distance(candidatePos, new Vector2(b.X, b.Y));
+                if (candidateDistance > candidate.Radius) continue;
+
+                int currentId = FindCoveringPdu(b.X, b.Y);
+                float currentDistance = currentId >= 0
+                    ? Vector2.Distance(new Vector2(Buildings[currentId].X, Buildings[currentId].Y),
+                        new Vector2(b.X, b.Y))
+                    : float.MaxValue;
+                if (candidateDistance < currentDistance)
+                    load += b.Spec.DrawKw;
+            }
+            return load;
+        }
+
+        private float ProjectedFeedLoadKw()
+        {
+            float load = 0f;
+            foreach (Building b in Buildings)
+            {
+                if (b.Removed || b.Kind == BuildingKind.GridFeed) continue;
+
+                load += b.Spec.DrawKw;
+            }
+            return load;
         }
 
         public Building TryPlace(BuildingKind k, int x, int y)
@@ -441,6 +579,8 @@ namespace Throughput.Sim
             Building b = Create(k, x, y, prePlaced: false);
             b.State = BuildingState.Booting;
             b.BootRemaining = b.Spec.BootSeconds;
+            if (b.Spec.IsRack || b.Kind == BuildingKind.Crac)
+                b.PduId = FindCoveringPdu(x, y);
             _lastPlacedId = b.Id;
             _lastPlacedAt = Elapsed;
             _heatDirty = true;
