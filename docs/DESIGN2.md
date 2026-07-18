@@ -13,7 +13,7 @@
 6. **Typed jobs (cyan/purple)** — purple is GPU-only; kills CPU-spam dominance, gives demand a face.
 7. **Global utilization multiplier killed** — jobs assign per-rack (oldest-fed-first); a rack is fed or starving, HUD shows **Served PF / Capacity PF + queue**.
 8. **Ghost is tri-state** (green/amber/red) — power-ring membership and cash are hard gates; PDU overload, heat, and bandwidth are amber warnings you may knowingly eat. This is what lets the breaker trip and NO-UPLINK states exist as teachers.
-9. **Scope cut to the realist's line** — Phase A ships 4 placeable buildings + 2 click-purchases (the "7 buildings" pillar completes in Phase B — say so in playtest notes). Heat is a stamped field, not diffusion. 3 sounds max. No save. One hardcoded contract script.
+9. **Scope cut to the realist's line** — Phase A ships 4 placeable buildings + 2 click-purchases (the "7 buildings" pillar completes in Phase B — say so in playtest notes). Heat is a stamped field, not diffusion. 4 sounds max. No save. One hardcoded contract script.
 
 ---
 
@@ -52,7 +52,7 @@ Player skill = **layout under multi-constraint pressure**. Dense = profitable = 
 
 ## 3. First 60 Seconds (exact beat script — no modals, ever)
 
-Pre-placed at load: **Grid Feed** stub (top edge, 500 kW), **PDU #1** (100 kW, radius-3 yellow ring visible), **Fiber Uplink** (left edge, 10 Gbps) with cyan job dots already piling into a pulsing queue. Toolbar: ONE enabled chip (CPU Rack, softly pulsing) + 3 locked silhouettes (GPU Rack, PDU, CRAC). HUD: Cash $10,000 · NET $0.00 · Served 0/0 PF (queue throbbing) · Power 5/500 kW · BW 0/10 Gbps · Day 1, 06:00, price $0.02→.
+Pre-placed at load: **Grid Feed** stub (top edge, 500 kW), **PDU #1** (100 kW, radius-3 yellow ring visible), **Fiber Uplink** (left edge, 10 Gbps) with cyan job dots already piling into a pulsing queue. Toolbar: CPU Rack and PDU enabled + 2 locked silhouettes (GPU Rack, CRAC). HUD after the first tick: Cash $10,000 · NET −$0.20/s · Served 0/4 PF (queue throbbing) · Power 10/500 kW · BW 0/10 Gbps · Day 1, 06:00, price $0.02→.
 
 | Time | Beat |
 |---|---|
@@ -74,7 +74,7 @@ Pre-placed at load: **Grid Feed** stub (top edge, 500 kW), **PDU #1** (100 kW, r
 
 - **Grid Feed** (pre-built, not placeable): facility cap **500 kW**. HUD bar `total kW / 500`.
 - **PDU** (placeable, $2,000): powers buildings within **radius 3**, capacity **100 kW**, draws 5 kW. Every powered building must sit inside some PDU ring (hard gate). PDUs hang off the feed. No PDU chaining, no cable graph.
-- **Overload:** at **90%** of PDU or feed rating → amber blink + tick-tick. **>100% for 3s → breaker trip**: white arc-flash, thud, that PDU's subtree dark 8s, then staged reboot (0.5s stagger). One-line toast + camera nudge. The first trip IS the power tutorial. *(Cut: reboot heat spike.)*
+- **Overload:** at **90%** of PDU or feed rating → amber blink + tick-tick. **>100% for 3s → breaker trip**: white arc-flash, thud, that PDU's subtree dark 8s, then staged reboot (0.5s stagger). Equipment that was thermally shut down returns to that state and still requires its paid restart. One-line toast + camera nudge. The first trip IS the power tutorial. *(Cut: reboot heat spike.)*
 - **Overload is reachable on purpose:** the ghost shows **amber** ("PDU at 108% — breaker will trip") but allows placement. Ignore the warning, eat a cheap recoverable trip, learn. That's the lesson plan.
 - **Expansion:** when feed ≥80%, a contextual chip appears ON the Grid Feed sprite: **"+500 kW — $12,000 · arrives 90s"**. Lead time is the mid-game bet. (Also reachable anytime by clicking the Feed.)
 
@@ -101,7 +101,7 @@ Pre-placed at load: **Grid Feed** stub (top edge, 500 kW), **PDU #1** (100 kW, r
 
 ### 4.4 Network (the soft gate)
 
-- Facility bandwidth pool, **10 Gbps** at the Uplink. Each online rack consumes bandwidth (CPU 1, GPU 4). Over cap → **newest** racks get a cyan **NO UPLINK** badge, drop to 0 served, dots never arrive.
+- Facility bandwidth pool, **10 Gbps** at the Uplink. Each powered online rack attempts bandwidth (CPU 1, GPU 4). Over cap → **newest** racks get a cyan **NO UPLINK** badge, drop to 0 served, dots never arrive. The HUD shows attempted and accepted bandwidth separately.
 - **Not a placement blocker:** the ghost goes amber (*"Will exceed uplink — rack will idle"*). The fix is a purchase available **from minute 0**: contextual chip on the Uplink sprite at ≥80% usage — **"+10 Gbps — $3,000"**, instant. No gate, no puzzle, no deadlock.
 - Spine Switch / contiguous-pod clauses: STRETCH, cut.
 
@@ -110,8 +110,10 @@ Pre-placed at load: **Grid Feed** stub (top edge, 500 kW), **PDU #1** (100 kW, r
 Tri-state ghost, failing/warning reason named at the cursor (first reason only; full detail mirrored in a fixed strip above the toolbar):
 
 - **RED (cannot place):** outside every PDU ring (*"Needs power — build in ring"*) · tile occupied/out of bounds · cash < cost · feed would exceed 500 kW (*"Grid feed maxed — order substation"*).
-- **AMBER (places, with consequences):** PDU would exceed 100 kW (*"PDU at 108% — breaker will trip"*) · tile ≥45° (*"Too hot here — will throttle"*) · bandwidth over cap (*"Uplink saturated — rack will idle"*).
+- **AMBER (places, with consequences):** PDU reaches ≥90% (*"PDU at 95% — near breaker limit"*) or exceeds 100 kW (*"PDU at 105% — breaker will trip"*) · tile ≥45° (*"Too hot here — will throttle"*) · bandwidth over cap (*"Uplink saturated — rack will idle"*).
 - **GREEN:** all clear. Cost + wallet-after always shown.
+
+Placement forecasts reserve feed, PDU, and bandwidth capacity for every installed building, including equipment that is temporarily off, dark, booting, or heat-shut down. Power cycling therefore cannot be used to construct a grid that exceeds its hard limits when everything returns.
 
 Dense clusters share PDUs and CRACs efficiently but stack heat; sprawl stays cool but multiplies capex and floor. That tension is the game.
 
@@ -130,7 +132,7 @@ Dense clusters share PDUs and CRACs efficiently but stack heat; sprawl stays coo
 
 - Game day = **3 minutes**. Clock pinned: **elapsed 0:00 = Day 1, 06:00**; evening peak (18:00) lands at +90s into each day → **1:30, 4:30, 7:30, …**
 - **Day 1 curve is flattened: $0.02–0.04.** Day 2 onward: full sine **$0.02 night → $0.05 midday → $0.08 peak**, with current price + trend arrow on the HUD (sparkline cut — unreadable at 720p).
-- Every powered building pays draw × price continuously. First possible red-NET moment is Day 2's peak (~4:30) — by then the player has GPU racks, the toggle verb, and a contract. The first red is a lesson with a lever, not weather.
+- Every powered building pays draw × price continuously. The empty starter grid begins slightly red at −$0.20/s, making the first rack an immediate, visible route back to profit. Later peak-price pressure can be answered with layout, cooling, and load shedding.
 - Battery/UPS/Generator: STRETCH, cut.
 
 ### 5.3 Contracts (cards, not dialogs — 5 numbers)
@@ -141,7 +143,7 @@ At most 2 offered / 2 active (Phase A: hardcoded two-card timeline, no generator
 ┌──────────────────────────────────┐
 │  PICOCHAT             [inference]│
 │  ▦ needs: 1 GPU rack online      │
-│  💰 advance: $2,500 now          │
+│  💰 advance: $8,000 now          │
 │  📈 adds: +4 PF (GPU jobs)       │
 │  ⚡ rate: +25% on its jobs       │
 │  ⏱ by Day 3 · penalty $1,000    │
@@ -149,9 +151,9 @@ At most 2 offered / 2 active (Phase A: hardcoded two-card timeline, no generator
 ```
 
 - **PicoChat** — offered the moment GPU Rack unlocks (~2:15–2:30). Funds GPU #1, teaches the contract verb at minute 3, gives the purple pool a face.
-- **Nimbus AI** — offered Day 4 (~9:00): **needs 4 GPU racks online · advance $8,000 · adds +20 PF · rate +50% on its jobs · by Day 7 · penalty $5,000.** Capex to fulfill ≈ $10–14k of new build against $8k advance + earnings — a real, winnable bet that immediately pushes the feed toward the substation chip.
+- **Nimbus AI** — offered Day 4 (~9:00): **needs 4 operational GPU racks · advance $8,000 · adds +20 PF · rate +50% on its jobs · by Day 7 · penalty $5,000.** The safe tested expansion is `$15,500` beyond the second site, funded by the one-time advance plus earnings.
 - Declining: PASS button; the card returns at the next day rollover. No penalty for passing.
-- SLA drain bars, training load oscillation, contract generator: **Phase B**. Failure = deadline miss → penalty + snarky departure toast. Never game-over.
+- SLA drain bars, training load oscillation, contract generator: **Phase B**. An active deadline miss is checked before fulfillment, charges the penalty, and reoffers a recovery contract next day with a fresh window but no second advance. Failure delays mastery; it never makes the run permanently unwinnable.
 
 ### 5.4 Goal chips (max 2 visible, ≤5 words, always one cooking)
 
@@ -160,11 +162,11 @@ At most 2 offered / 2 active (Phase A: hardcoded two-card timeline, no generator
 | 1 | ▦ Deploy a rack | (first money is the reward) |
 | 2 | ▦ Two more racks | +$250 |
 | 3 | ❄ Cool the hall | +$250 · unlocks CRAC chip |
-| 4 | 💰 Earn $1,200 *(progress bar; "earned" = revenue + rewards + contract pay, not starting cash)* | unlocks **GPU Rack** |
-| 5 | 📄 Sign your first contract *(PicoChat card arrives with it)* | advance $2,500 |
+| 4 | 💰 Earn $1,200 *(progress bar; "earned" = served-work revenue + rewards, not starting cash or advances)* | unlocks **GPU Rack** |
+| 5 | 📄 Sign your first contract *(PicoChat card arrives with it)* | advance $8,000 |
 | 6 | ⚡ 100 kW IT online | +$1,500 |
 | 7 | ⭐ Hold NET green through a peak | +$500 |
-| 8 | 💰 Earn $15,000 lifetime | Phase B: unlocks Chiller + GPU Pod; Phase A: open-ended play + Nimbus arc |
+| 8 | 💰 Earn $15,000 lifetime **and fulfill Nimbus** | Phase B: unlocks Chiller + GPU Pod; Phase A: persistent GRID MASTERED state |
 
 Completion = checkmark burst + chime + cash; the next chip and a locked silhouette are always on screen.
 
@@ -225,21 +227,21 @@ Phase B adds: GPU Pod (liquid) $16,000 / 120 kW / 16 PF / 12 Gbps / $20/s (needs
 
 | Config | IT kW | Overhead | Total | BW | Gross $/s fed | Wall hit |
 |---|---|---|---|---|---|---|
-| 3 CPU + 1 CRAC + PDU#1 (minute 1) | 30 | 30 | 60 | 3 | $6 | none — easy |
-| +GPU #1 (~3:00) | 70 | 30 | 100 | 7 | $12 | PDU#1 at 100% — **amber, first trip zone** |
-| +PDU#2, +GPU #2 (~5:30) | 110 | 60 | 170 | 11 | $18 | **bandwidth 11/10** + heat 110 kW vs 1 CRAC — pick your poison |
-| 3 CPU + 4 GPU, 3 CRAC, 2 PDU (Nimbus done) | 190 | 85 | 275 | 19 | $30 | comfortable — growth resumes |
+| 3 CPU + 1 CRAC + PDU#1 (minute 1) | 30 | 35 | 65 | 3 | $6 | none — easy |
+| +GPU #1 (~3:00) | 70 | 35 | 105 | 7 | $12 | PDU#1 at 95% — **amber; one more load risks a trip** |
+| +PDU#2, +CRAC, +GPU #2 (~5:30) | 110 | 65 | 175 | 11 | $18 | **bandwidth 11/10** until the uplink upgrade |
+| 3 CPU + 4 GPU, 3 CRAC, 4 PDU (Nimbus done) | 190 | 100 | 290 | 19 | $30 | safe four-site win path; growth resumes |
 | 3 CPU + 8 GPU (Day 7–8 demand) | 350 | ~145 | ~495 | 35 | $54 | **99% of feed → substation** |
 
 ### 6.4 Pacing verification (retuned — decision timeline)
 
-- **0:12–0:55:** place 4 buildings, 3 chips complete. Demand 4 PF vs 3 PF capacity → racks 100% fed, $6/s gross, queue still piles. Electricity ≤ 60 kW × $0.04 = $2.4/s worst case → NET green all of Day 1.
+- **0:12–0:55:** place 4 buildings, 3 chips complete. Demand 4 PF vs 3 PF capacity → racks 100% fed, $6/s gross, queue still piles. Electricity ≤ 65 kW × $0.04 = $2.6/s worst case → NET green all of Day 1.
 - **~2:15:** earned ≈ $700 revenue + $500 rewards → **$1,200 gate opens** (≈40s tolerance). GPU silhouette resolves; wallet ≈ $7,500.
-- **~2:30:** **PicoChat** card. Sign → +$2,500 + purple demand → GPU #1. PDU #1 hits 100 kW — amber territory; careless overload → **first breaker trip ~3:00–5:00**, 8s dark, cheap lesson.
+- **~2:30:** **PicoChat** card. Sign → +$8,000 financing + purple demand → GPU #1, then a funded second-site decision. The advance increases cash but not lifetime earnings. PDU #1 reaches 95% amber; one careless extra load produces a cheap, recoverable breaker lesson.
 - **~4:30 (Day 2 peak):** first full peak with GPU online. Breakeven triangle rides up; toggle verb + contract income = survivable, instructive.
-- **~5:30:** goal "100 kW IT" → GPU #2 → requires **PDU #2 placement** (first genuine layout decision: where do rings overlap?), and lights **both** soft crunches: heat (110 kW vs one CRAC) and bandwidth (11/10). Wallet ≈ $4–6k: can afford CRAC ($1.5k) **or** uplink ($3k) comfortably, not both plus reserves before the 7:30 peak — choose which penalty to eat for a minute.
+- **~5:30:** the Pico advance plus earned revenue funds the full `$11,500` second-site package: **PDU #2 + CRAC + GPU #2 + uplink**. Placement and purchase order still matter: boot the site before upgrading and the new GPU visibly idles at 11/10 bandwidth.
 - **~7:30 (Day 3 peak):** hold-NET-green chip resolves or teaches.
-- **~9:00 (Day 4):** **Nimbus** card — $8k now against ~$10–14k of buildout by Day 7, +20 PF of purple demand. Accept → growth plan → feed climbs → **substation chip appears at 400 kW** — the expansion bet is the player's, on schedule.
+- **~9:00 (Day 4):** **Nimbus** card — $8k now against a further `$15,500` safe buildout by Day 7, +20 PF of purple demand. The tested route adds two powered GPU sites and reaches mastery without tripping a breaker; a denser layout remains the riskier alternative.
 - Dead-air check: zero-input windows >60s in the first 10 min ≈ 0–1 (was ~5 in v2.0).
 
 ---
@@ -247,16 +249,16 @@ Phase B adds: GPU Pod (liquid) $16,000 / 120 kW / 16 PF / 12 Gbps / $20/s (needs
 ## 7. Input Spec (left-click only — the browser contract)
 
 **Verbs (complete list):**
-1. **Click toolbar chip** → placement mode: chip highlights with visible ✕, cursor becomes ghost.
+1. **Click toolbar chip** → placement mode: chip highlights, cursor becomes ghost.
 2. **Move mouse** → ghost snaps to grid; **green/amber/red** with ≤8-word reason; cost + wallet-after at cursor (clamped to screen edges, first reason only; full detail in a fixed strip above the toolbar). While armed: nearest PDU ring bright, other rings 25% alpha; cooling ring + heat overlay auto-shown for racks/CRAC. Never all overlays at full strength simultaneously.
-3. **Click valid cell** → place; **tool stays armed** (sticky). Click the chip / its ✕ / any UI to disarm. Esc also cancels but is never the only way.
+3. **Click valid cell** → place; **tool stays armed** (sticky). Click the highlighted chip again to disarm. Esc also cancels but is never the only way.
 4. **Click placed building** → inspect panel **docked to the right edge** (never under the cursor): name, live status line ("Throttled: 61° — no cooling in range"), served/draw/heat, **Toggle On/Off** (load-shed verb), **Sell** (100% refund ≤5s after placement, 50% after).
-5. **Click contract card / goal chip / Grid Feed / Uplink / contextual chips** → accept / claim / buy. Contextual buy-chips self-advertise at ≥80% usage — buildings-as-buttons is taught, not hidden.
-6. **Click empty ground with no tool** → nothing. Never destructive.
+5. **Click contract card / Grid Feed / Uplink / contextual chips** → accept / buy. Goal chips complete automatically when their visible condition is met. Contextual buy-chips self-advertise at ≥80% usage — buildings-as-buttons is taught, not hidden.
+6. **Click empty ground with no tool** → close the inspect panel. Never destructive.
 7. **On-screen Undo button** (Z accelerator): reverts last placement, full refund (until next placement or 10s; after that, Sell).
 8. Time controls: **⏸ / 1× / 3×**, always visible, ≥44px targets, corner-anchored. Zoom via on-screen ± buttons.
 
-**Forbidden:** right-click (context menu suppressed via WebGL template JS regardless), required drag, double-click, hover-only info, scroll-only zoom. `WebGLInput.captureAllKeyboardInput = false`; keyboard = optional accelerators only. Click targets fat: the whole tile is the target, badges ≥20px screen-space.
+**Forbidden:** right-click (context menu suppressed via WebGL template JS regardless), required drag, double-click, hover-only info, scroll-only zoom. A capture-phase template guard sends keyboard input to Unity only while the canvas is focused; keyboard remains optional accelerators only. Click targets fat: the whole tile is the target, badges ≥20px screen-space.
 
 ---
 
@@ -271,7 +273,7 @@ Phase B adds: GPU Pod (liquid) $16,000 / 120 kW / 16 PF / 12 Gbps / $20/s (needs
 - Power: amber blink at 90%; **breaker trip = white arc-flash + thud + subtree dark**; staged reboot LEDs.
 - Fans: rotating sprite, speed mapped to heat. Cables: dumb L-polylines under buildings, flavor only.
 - Money floaters on every payout tick; placement scale-pop + thunk + dust. Hit-pause/camera nudge reserved for breaker trips only — juice never buries validity tints or badges.
-- **Audio: exactly 3 pre-baked one-shots** — money tick (most polished), breaker trip, goal chime. Rate-limited. If time runs out, ship silent; floaters carry the reward feel. Sonification: STRETCH.
+- **Audio: exactly 4 procedural one-shots** — money tick (most polished), placement thunk, breaker trip, goal chime. Rate-limited. If time runs out, ship silent; floaters carry the reward feel. Sonification: STRETCH.
 
 **HUD @1280×720 (fits or it doesn't ship):** Top bar, 6 widgets max: **Cash · NET $/s (green/red) · Served/Capacity PF + queue depth (breakeven ▲ marker) · Power kW/cap bar · BW Gbps/cap bar · Day+clock+price+trend arrow.** PUE and sparkline: Phase B. Bottom: build chips (4 + locked silhouettes). Left gutter (~320px, map uses the right ~960px): goal chips (≤2) + contract cards (≤2). Right edge: docked inspect panel. Corners: time controls, zoom ±, Undo.
 
@@ -280,7 +282,7 @@ Phase B adds: GPU Pod (liquid) $16,000 / 120 kW / 16 PF / 12 Gbps / $20/s (needs
 ## 9. Scope
 
 ### MUST (Phase A — this session, gate = playtestable)
-24×16 floor; pre-placed Feed/PDU/Uplink · 4 placeables (CPU, GPU, PDU, CRAC) + 2 purchases (uplink, substation w/ 90s timer) · 2-level power tree, 90% amber, 100%-for-3s trip, 8s dark + staged reboot · stamped heat field @2 Hz, 45/60/75 ladder, badges w/ reasons, texture-quad overlay · bandwidth pool + NO UPLINK + contextual chips · typed demand (cyan/purple), per-rack oldest-first assignment, queue depth · revenue + electricity day-curve (Day 1 flattened) + NET + breakeven marker · tri-state ghost w/ reasons + rings + sticky + cost-at-cursor · goal chips 1–8 · hardcoded PicoChat + Nimbus cards (5 numbers, PASS/refresh, deadline check — no generator, no SLA bars, no spikes) · inspect panel (status/toggle/sell) · 1-deep undo · pause/1×/3× · job dots from v1 packet pool + LED flipbook + fan sprite + floaters + scale-pop · 3 sounds · WebGL template: right-click suppressed, keyboard capture off · two-invalid-placements hint banner.
+24×16 floor; pre-placed Feed/PDU/Uplink · 4 placeables (CPU, GPU, PDU, CRAC) + 2 purchases (uplink, substation w/ 90s timer) · 2-level power tree, 90% amber, 100%-for-3s trip, 8s dark + staged reboot · stamped heat field @2 Hz, 45/60/75 ladder, badges w/ reasons, texture-quad overlay · bandwidth pool + NO UPLINK + contextual chips · typed demand (cyan/purple), per-rack oldest-first assignment, queue depth · revenue + electricity day-curve (Day 1 flattened) + NET + breakeven marker · tri-state ghost w/ reasons + rings + sticky + cost-at-cursor · goal chips 1–8 · hardcoded PicoChat + Nimbus cards (5 numbers, PASS/refresh, deadline check — no generator, no SLA bars, no spikes) · inspect panel (status/toggle/sell/purchase) · 1-deep undo · pause/1×/3× + zoom · job dots from v1 packet pool + LED flipbook + fan sprite + floaters + scale-pop · 4 sounds · WebGL template: right-click suppressed, keyboard capture scoped to the focused canvas · two-invalid-placements hint banner.
 
 ### Phase B (next session)
 Chiller + GPU Pod + delivery queue + $15k unlock · GPU failures + drone repair · brownout (shed mode, draw-scaled cap) + heat wave (softened first instance, prep chip) + forecast bar · contract generator, 2/2 slots, SLA bars, training spikes · PUE readout · price sparkline · boot LED cascade polish · idle-nudge + "?" replay · star chip (PUE ≤1.35).

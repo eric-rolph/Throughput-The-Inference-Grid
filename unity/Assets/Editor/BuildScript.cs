@@ -43,6 +43,30 @@ public static class BuildScript
         if (File.Exists(indexPath))
         {
             string html = File.ReadAllText(indexPath);
+            if (!html.Contains("throughput-keyboard-guard"))
+                html = html.Replace("</head>",
+                    "<script data-throughput-keyboard-guard>" +
+                    "['keydown','keyup','keypress'].forEach(function(t){" +
+                    "window.addEventListener(t,function(e){" +
+                    "if(e.target!==document.getElementById('unity-canvas'))e.stopImmediatePropagation();" +
+                    "},true);" +
+                    "});window.addEventListener('pointerdown',function(e){" +
+                    "if(e.target===document.getElementById('unity-canvas'))e.target.focus();" +
+                    "},true);</script></head>");
+            if (!html.Contains("throughput-responsive-layout"))
+                html = html.Replace("</head>",
+                    "<style data-throughput-responsive-layout>" +
+                    "html,body{width:100%;height:100%;overflow:hidden}" +
+                    "#unity-container.unity-desktop #unity-footer{display:none}" +
+                    "</style><script data-throughput-responsive-layout>" +
+                    "function throughputFitCanvas(){" +
+                    "var c=document.getElementById('unity-canvas'),n=document.getElementById('unity-container');" +
+                    "if(!c||!n||n.classList.contains('unity-mobile'))return;" +
+                    "var s=Math.min(innerWidth/1280,innerHeight/720);" +
+                    "c.style.width=Math.floor(1280*s)+'px';c.style.height=Math.floor(720*s)+'px';" +
+                    "}window.addEventListener('resize',throughputFitCanvas);" +
+                    "window.addEventListener('DOMContentLoaded',throughputFitCanvas);" +
+                    "</script></head>");
             if (!html.Contains("contextmenu"))
                 html = html.Replace("</body>",
                     "<script>document.addEventListener('contextmenu',function(e){e.preventDefault();});</script></body>");

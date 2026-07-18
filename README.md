@@ -22,6 +22,7 @@ https://throughput-the-inference-grid.ericrolph.workers.dev
 | --- | --- |
 | `unity/` | Unity project (Unity 6000.3 LTS, 2D) |
 | `dist/` | Committed WebGL build output — served by the Worker |
+| `Tests/SimTests/` | Headless NUnit simulation regressions and deterministic win-path playthrough |
 | `wrangler.jsonc` | Cloudflare Worker config (static assets from `dist/`) |
 | `.github/workflows/deploy.yml` | Deploys `dist/` to Cloudflare on every push to `main` |
 | `docs/DESIGN2.md` | Current game design (v2 — data-center builder) |
@@ -30,8 +31,8 @@ https://throughput-the-inference-grid.ericrolph.workers.dev
 
 ## Deploy pipeline
 
-Every push to `main` runs the GitHub Actions workflow, which publishes `dist/` to
-Cloudflare Workers via `wrangler-action`. The Unity WebGL build is produced locally
+Every push to `main` runs the headless simulation suite before publishing `dist/`
+to Cloudflare Workers via `wrangler-action`. Pull requests run the same suite. The Unity WebGL build is produced locally
 (Unity batchmode) into `dist/` and committed; CI stays fast and needs no Unity license.
 
 Local deploy (requires wrangler auth or `CLOUDFLARE_API_TOKEN`):
@@ -50,3 +51,13 @@ Unity.exe -batchmode -quit -projectPath unity -executeMethod BuildScript.BuildWe
 ```
 
 The build lands in `dist/`.
+
+## Headless simulation tests
+
+The core simulation can be tested without launching Unity. The suite includes an
+accelerated, deterministic playthrough from the starting grid through Nimbus
+fulfillment and the persistent mastery state.
+
+```powershell
+dotnet test .\Tests\SimTests\Throughput.SimTests.csproj -c Release
+```

@@ -31,6 +31,10 @@ node_modules/
 .dev.vars
 .env
 
+# --- .NET headless tests ---
+[Bb]in/
+[Oo]bj/
+
 # --- OS ---
 Thumbs.db
 .DS_Store

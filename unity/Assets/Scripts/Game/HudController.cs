@@ -136,9 +136,10 @@ namespace Throughput.Game
                 o.State == OfferState.Fulfilled ? GameTheme.Ok : GameTheme.JobPurple);
             UiBuilder.Place(title.rectTransform, new Vector2(0, 1), new Vector2(1, 1), new Vector2(12, -30), new Vector2(-8, -4));
 
+            string advanceLine = o.AdvancePaid ? "$ advance: already paid" : $"$ advance: ${o.Advance:0} now";
             string body =
-                $"▦ needs: {o.NeedsGpuOnline} GPU rack{(o.NeedsGpuOnline > 1 ? "s" : "")} online\n" +
-                $"$ advance: ${o.Advance:0} now\n" +
+                $"▦ needs: {o.NeedsGpuOnline} operational GPU rack{(o.NeedsGpuOnline > 1 ? "s" : "")}\n" +
+                advanceLine + "\n" +
                 $"+ adds: {o.AddsPurplePf:0} PF (GPU jobs)\n" +
                 $"^ rate: +{(o.RateBonus - 1f) * 100f:0}% on its jobs\n" +
                 $"! by Day {o.DeadlineDay} · penalty ${o.Penalty:0}";
@@ -161,7 +162,7 @@ namespace Throughput.Game
             else
             {
                 string status = o.State == OfferState.Fulfilled ? "✓ CAPACITY ONLINE — bonus flowing"
-                    : $"ACTIVE — need {o.NeedsGpuOnline} GPU online by Day {o.DeadlineDay}";
+                    : $"ACTIVE — need {o.NeedsGpuOnline} operational GPU by Day {o.DeadlineDay}";
                 Text st = UiBuilder.Label(card, "status", status, 14,
                     o.State == OfferState.Fulfilled ? GameTheme.Ok : GameTheme.Warn, TextAnchor.MiddleLeft);
                 UiBuilder.Place(st.rectTransform, new Vector2(0, 0), new Vector2(1, 0), new Vector2(12, 6), new Vector2(-8, 38));
@@ -190,7 +191,7 @@ namespace Throughput.Game
 
             _heatToggle = MakeToggle(bar, "HEAT", 0.66f, () => { _game.Renderer.ShowHeat = !_game.Renderer.ShowHeat; });
             _powerToggle = MakeToggle(bar, "POWER", 0.77f, () => { _game.Renderer.ShowPower = !_game.Renderer.ShowPower; });
-            _netToggle = MakeToggle(bar, "NET", 0.88f, () => { _game.Renderer.ShowNetwork = !_game.Renderer.ShowNetwork; });
+            _netToggle = MakeToggle(bar, "NETWORK", 0.88f, () => { _game.Renderer.ShowNetwork = !_game.Renderer.ShowNetwork; });
 
             _reasonStrip = UiBuilder.Label(_canvas.transform, "Reason", "", 17, GameTheme.Warn, TextAnchor.MiddleCenter);
             UiBuilder.Place(_reasonStrip.rectTransform, new Vector2(0.5f, 0), new Vector2(0.5f, 0), new Vector2(-430, 82), new Vector2(430, 108));
@@ -222,7 +223,13 @@ namespace Throughput.Game
 
             _toggleBtn = UiBuilder.TextButton(_inspectPanel, "toggle", "TOGGLE OFF", 15,
                 new Color(0.16f, 0.20f, 0.30f, 1f), GameTheme.TextBright, () =>
-                { if (_inspectId >= 0) _world.ToggleBuilding(_inspectId); });
+                {
+                    if (_inspectId < 0) return;
+                    Building selected = _world.Buildings[_inspectId];
+                    if (selected.Kind == BuildingKind.Uplink) _world.BuyUplink();
+                    else if (selected.Kind == BuildingKind.GridFeed) _world.OrderSubstation();
+                    else _world.ToggleBuilding(_inspectId);
+                });
             UiBuilder.Place(_toggleBtn.GetComponent<RectTransform>(), new Vector2(0, 0), new Vector2(0.5f, 0),
                 new Vector2(10, 52), new Vector2(-4, 90));
 
@@ -249,7 +256,7 @@ namespace Throughput.Game
         private void BuildCorners()
         {
             RectTransform speed = UiBuilder.Panel(_canvas.transform, "Speed", Color.clear);
-            UiBuilder.Place(speed, new Vector2(1, 1), new Vector2(1, 1), new Vector2(-250, -104), new Vector2(-8, -54));
+            UiBuilder.Place(speed, new Vector2(1, 1), new Vector2(1, 1), new Vector2(-438, -110), new Vector2(-8, -54));
             string[] labels = { "II", "1x", "3x" };
             float[] mults = { 0f, 1f, 3f };
             for (int i = 0; i < 3; i++)
@@ -257,13 +264,23 @@ namespace Throughput.Game
                 float m = mults[i];
                 Button b = UiBuilder.TextButton(speed, "spd" + i, labels[i], 17,
                     new Color(0.12f, 0.16f, 0.24f, 0.95f), GameTheme.TextBright, () => _game.SetSpeed(m));
-                UiBuilder.Place(b.GetComponent<RectTransform>(), new Vector2(i / 3.6f, 0), new Vector2((i + 1) / 3.6f, 1),
+                UiBuilder.Place(b.GetComponent<RectTransform>(), new Vector2(i / 6f, 0), new Vector2((i + 1) / 6f, 1),
                     new Vector2(2, 0), new Vector2(-2, 0));
             }
+
+            Button zoomOut = UiBuilder.TextButton(speed, "zoomOut", "-", 22,
+                new Color(0.12f, 0.16f, 0.24f, 0.95f), GameTheme.TextBright, () => _game.AdjustZoom(0.8f));
+            UiBuilder.Place(zoomOut.GetComponent<RectTransform>(), new Vector2(3f / 6f, 0), new Vector2(4f / 6f, 1),
+                new Vector2(2, 0), new Vector2(-2, 0));
+            Button zoomIn = UiBuilder.TextButton(speed, "zoomIn", "+", 22,
+                new Color(0.12f, 0.16f, 0.24f, 0.95f), GameTheme.TextBright, () => _game.AdjustZoom(-0.8f));
+            UiBuilder.Place(zoomIn.GetComponent<RectTransform>(), new Vector2(4f / 6f, 0), new Vector2(5f / 6f, 1),
+                new Vector2(2, 0), new Vector2(-2, 0));
+
             _undoBtn = UiBuilder.TextButton(speed, "undo", "UNDO", 15,
                 new Color(0.12f, 0.16f, 0.24f, 0.95f), GameTheme.TextBright, () => _world.TryUndo());
-            UiBuilder.Place(_undoBtn.GetComponent<RectTransform>(), new Vector2(0.85f, 0), new Vector2(1.55f, 1),
-                new Vector2(2, 0), new Vector2(-60, 0));
+            UiBuilder.Place(_undoBtn.GetComponent<RectTransform>(), new Vector2(5f / 6f, 0), new Vector2(1, 1),
+                new Vector2(2, 0), new Vector2(-2, 0));
         }
 
         private void BuildTicker()
@@ -367,13 +384,21 @@ namespace Throughput.Game
         {
             GoalChip cur = _world.Goals.Current;
             GoalChip next = _world.Goals.Next;
-            _goalRow1.gameObject.SetActive(cur != null);
-            if (cur != null)
+            bool complete = _world.Goals.IsComplete;
+            _goalRow1.gameObject.SetActive(cur != null || complete);
+            if (complete)
+            {
+                _goal1Text.text = "★ GRID MASTERED — NIMBUS DELIVERED";
+                _goal1Text.color = GameTheme.Ok;
+                _goal1Progress.rectTransform.anchorMax = Vector2.one;
+            }
+            else if (cur != null)
             {
                 _goal1Text.text = cur.Text + (cur.Reward > 0 ? $"  (+${cur.Reward:0})" : "");
+                _goal1Text.color = GameTheme.TextBright;
                 _goal1Progress.rectTransform.anchorMax = new Vector2(cur.HasProgress ? cur.Progress : 0f, 1f);
             }
-            _goalRow2.gameObject.SetActive(next != null);
+            _goalRow2.gameObject.SetActive(!complete && next != null);
             if (next != null) _goal2Text.text = "next: " + next.Text;
         }
 
@@ -395,7 +420,11 @@ namespace Throughput.Game
                 bool locked = (kind == BuildingKind.GpuRack && !_world.GpuUnlocked) ||
                               (kind == BuildingKind.Crac && !_world.CracUnlocked);
                 bool affordable = _world.Cash >= spec.Cost;
+                bool selected = _game.Renderer.PlacingKind == kind;
                 _buildButtons[i].interactable = !locked && affordable;
+                _buildButtons[i].GetComponent<Image>().color = selected
+                    ? new Color(0.12f, 0.42f, 0.34f, 1f)
+                    : GameTheme.ChipBg;
                 if (locked)
                 {
                     _buildLabels[i].text = kind == BuildingKind.GpuRack
@@ -404,7 +433,7 @@ namespace Throughput.Game
                 }
                 else
                 {
-                    _buildLabels[i].text = $"{spec.Name}\n${spec.Cost:0}";
+                    _buildLabels[i].text = $"{(selected ? "✕ " : "")}{spec.Name}\n${spec.Cost:0}";
                     _buildLabels[i].color = affordable ? GameTheme.TextBright : GameTheme.TextDim;
                 }
             }
@@ -456,28 +485,57 @@ namespace Throughput.Game
 
             _inspectTitle.text = spec.Name;
             _inspectStatus.text = StatusLine(b);
-            _inspectStatus.color = b.State == BuildingState.Online && !b.ToggledOff ? GameTheme.Ok : GameTheme.Warn;
+            _inspectStatus.color = b.State == BuildingState.Online && b.HasPower && !b.ToggledOff
+                ? GameTheme.Ok : GameTheme.Warn;
 
             string stats = $"draw {spec.DrawKw:0} kW · tile {b.TileTemp:0}°";
             if (spec.IsRack)
                 stats += $"\nserving {b.ServedPf:0.0}/{spec.ComputePf:0} PF · {spec.BandwidthGbps:0} Gbps\nrevenue ${b.RevenueRate:0.00}/s";
             if (spec.PduCapKw > 0)
                 stats += $"\nload {_world.PduLoad(b.Id):0}/{spec.PduCapKw:0} kW";
+            if (b.Kind == BuildingKind.Uplink)
+                stats += $"\nattempted {_world.BandwidthUsed:0}/{_world.BandwidthCap:0} Gbps · accepted {_world.BandwidthAccepted:0}";
+            if (b.Kind == BuildingKind.GridFeed)
+                stats += $"\nload {_world.FeedLoadKw:0}/{_world.FeedCapKw:0} kW";
             _inspectStats.text = stats;
 
-            _toggleBtn.GetComponentInChildren<Text>().text = b.ToggledOff ? "POWER ON" : "TOGGLE OFF";
+            if (b.Kind == BuildingKind.Uplink)
+            {
+                _toggleBtn.GetComponentInChildren<Text>().text = $"BUY +10 Gbps  ${Balance.UplinkUpgradeCost:0}";
+                _toggleBtn.interactable = _world.Cash >= Balance.UplinkUpgradeCost;
+            }
+            else if (b.Kind == BuildingKind.GridFeed)
+            {
+                _toggleBtn.GetComponentInChildren<Text>().text = _world.SubstationEta > 0f
+                    ? $"SUBSTATION  {_world.SubstationEta:0}s"
+                    : $"ORDER +500 kW  ${Balance.SubstationCost:0}";
+                _toggleBtn.interactable = _world.Cash >= Balance.SubstationCost && _world.SubstationEta < 0f;
+            }
+            else
+            {
+                _toggleBtn.GetComponentInChildren<Text>().text = b.ToggledOff ? "POWER ON" : "TOGGLE OFF";
+                _toggleBtn.interactable = true;
+            }
             bool sellable = !b.PrePlaced;
             _sellBtn.gameObject.SetActive(sellable);
+            UiBuilder.Place(_toggleBtn.GetComponent<RectTransform>(), new Vector2(0, 0),
+                new Vector2(sellable ? 0.5f : 1f, 0), new Vector2(10, 52),
+                new Vector2(sellable ? -4 : -10, 90));
             _restartBtn.gameObject.SetActive(b.State == BuildingState.HeatShutdown);
         }
 
         private string StatusLine(Building b)
         {
             if (b.ToggledOff) return "Powered down by operator";
+            if (b.State == BuildingState.TrippedDark)
+                return $"DARK — breaker tripped, {b.DarkRemaining:0.0}s";
+            if ((b.Spec.IsRack || b.Kind == BuildingKind.Crac) && !b.HasPower)
+                return b.State == BuildingState.Booting
+                    ? $"NO POWER — boot paused at {b.BootRemaining:0.0}s"
+                    : "NO POWER — supplying PDU unavailable";
             switch (b.State)
             {
                 case BuildingState.Booting: return $"Booting — {b.BootRemaining:0.0}s";
-                case BuildingState.TrippedDark: return $"DARK — breaker tripped, {b.DarkRemaining:0.0}s";
                 case BuildingState.HeatShutdown: return $"THERMAL SHUTDOWN at {b.TileTemp:0}° — cool below 60°, restart $400";
                 default:
                     if (b.NoUplinkFlag) return "NO UPLINK — bandwidth saturated";

@@ -24,15 +24,12 @@ namespace Throughput.Game
         private void Awake()
         {
             Application.targetFrameRate = 60;
-#if UNITY_WEBGL && !UNITY_EDITOR
-            WebGLInput.captureAllKeyboardInput = false;
-#endif
             SpriteFactory.Build();
             _font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             UiBuilder.UiFont = _font;
 
             SetupCamera();
-            if (FindFirstObjectByType<EventSystem>() == null)
+            if (FindAnyObjectByType<EventSystem>() == null)
             {
                 var es = new GameObject("EventSystem");
                 es.AddComponent<EventSystem>();
@@ -130,11 +127,13 @@ namespace Throughput.Game
 
         public void PlayPlaceSound() => _audio.PlayOneShot(_placeClip, 0.8f);
 
-        public void SetSpeed(float s) => _speed = s;
+        public void SetSpeed(float s) => _speed = Mathf.Clamp(s, 0f, 3f);
+        public void AdjustZoom(float delta) =>
+            Cam.orthographicSize = Mathf.Clamp(Cam.orthographicSize + delta, 7.2f, 12f);
 
         /// External test hook (browser: unityInstance.SendMessage('Bootstrap','DebugCmd',...)).
         /// Commands: "place:cpu|gpu|pdu|crac:X:Y", "sell:X:Y", "toggle:X:Y",
-        /// "buyuplink", "substation", "speed:N", "state".
+        /// "buyuplink", "substation", "speed:N", "advance:TICKS", "state".
         public void DebugCmd(string cmd)
         {
             string[] p = cmd.Split(':');
@@ -154,6 +153,14 @@ namespace Throughput.Game
                 case "buyuplink": _world.BuyUplink(); break;
                 case "substation": _world.OrderSubstation(); break;
                 case "speed": SetSpeed(float.Parse(p[1])); break;
+                case "advance":
+                {
+                    int ticks = Mathf.Clamp(int.Parse(p[1]), 0, 200000);
+                    for (int i = 0; i < ticks; i++) _world.Step();
+                    _accumulator = 0f;
+                    Debug.Log($"[DebugCmd] advanced {ticks} ticks -> t={_world.Elapsed:0.0}s day={_world.Day}");
+                    break;
+                }
                 case "state":
                     Debug.Log($"[DebugCmd] cash={_world.Cash:0} earned={_world.Earned:0} net={_world.NetPerSec:0.00} " +
                               $"served={_world.ServedPf:0.0}/{_world.DemandCyanPf + _world.DemandPurplePf:0.0} " +

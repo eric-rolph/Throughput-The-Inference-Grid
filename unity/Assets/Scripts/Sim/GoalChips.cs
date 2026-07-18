@@ -21,10 +21,11 @@ namespace Throughput.Sim
             new GoalChip { Text = "📄 Sign a contract" },
             new GoalChip { Text = "⚡ 100 kW IT online", Reward = 1500, HasProgress = true },
             new GoalChip { Text = "⭐ NET green thru a peak", Reward = 500 },
-            new GoalChip { Text = "💰 Earn $15,000 lifetime", HasProgress = true },
+            new GoalChip { Text = "💰 Earn $15,000 + fulfill Nimbus", HasProgress = true },
         };
 
         public int CurrentIndex { get; private set; }
+        public bool IsComplete => CurrentIndex >= Chips.Length;
 
         public GoalChip Current => CurrentIndex < Chips.Length ? Chips[CurrentIndex] : null;
         public GoalChip Next => CurrentIndex + 1 < Chips.Length ? Chips[CurrentIndex + 1] : null;
@@ -55,8 +56,9 @@ namespace Throughput.Sim
                     break;
                 case 6: done = w.PeakHeldGreen; break;
                 case 7:
-                    c.Progress = UnityEngine.Mathf.Clamp01(w.Earned / Balance.LifetimeGate);
-                    done = w.Earned >= Balance.LifetimeGate;
+                    float earningsProgress = UnityEngine.Mathf.Clamp01(w.Earned / Balance.LifetimeGate);
+                    c.Progress = (earningsProgress + (w.Contracts.NimbusFulfilled ? 1f : 0f)) * 0.5f;
+                    done = w.Earned >= Balance.LifetimeGate && w.Contracts.NimbusFulfilled;
                     break;
             }
 

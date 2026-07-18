@@ -14,9 +14,9 @@ namespace Throughput.Game
         private Camera _cam;
 
         // Overlay state (set by HUD / input)
-        public bool ShowHeat, ShowPower, ShowNetwork;
-        public BuildingKind? PlacingKind;
-        public Vector2Int PlacingTile;
+        [System.NonSerialized] public bool ShowHeat, ShowPower, ShowNetwork;
+        [System.NonSerialized] public BuildingKind? PlacingKind;
+        [System.NonSerialized] public Vector2Int PlacingTile;
 
         private Texture2D _heatTex;
         private SpriteRenderer _heatQuad;
@@ -152,9 +152,10 @@ namespace Throughput.Game
                 BuildingSpec spec = b.Spec;
                 bool dark = b.State == BuildingState.TrippedDark;
                 bool off = b.ToggledOff;
+                bool unpowered = (spec.IsRack || b.Kind == BuildingKind.Crac) && !b.HasPower;
 
                 Color body = GameTheme.BuildingColor(b.Kind);
-                if (dark || off) body = Color.Lerp(body, Color.black, 0.75f);
+                if (dark || off || unpowered) body = Color.Lerp(body, Color.black, 0.75f);
                 else if (b.State == BuildingState.Booting) body = Color.Lerp(body, Color.black, 0.45f);
                 else if (b.State == BuildingState.HeatShutdown) body = Color.Lerp(body, GameTheme.Danger, 0.35f);
                 v.Body.color = body;
@@ -162,7 +163,7 @@ namespace Throughput.Game
                 // LEDs — servedPF literally
                 if (v.Led != null)
                 {
-                    if (dark || off || b.State != BuildingState.Online) v.Led.sprite = SpriteFactory.LedGrid[2];
+                    if (dark || off || unpowered || b.State != BuildingState.Online) v.Led.sprite = SpriteFactory.LedGrid[2];
                     else
                     {
                         float ratio = spec.ComputePf > 0 ? b.ServedPf / spec.ComputePf : 0f;
@@ -175,7 +176,7 @@ namespace Throughput.Game
                 // Fan spins by temperature
                 if (v.Fan != null)
                 {
-                    float speed = dark || off ? 0f : Mathf.Lerp(60f, 900f, Mathf.InverseLerp(24f, 75f, b.TileTemp));
+                    float speed = dark || off || unpowered ? 0f : Mathf.Lerp(60f, 900f, Mathf.InverseLerp(24f, 75f, b.TileTemp));
                     v.FanAngle += speed * dt;
                     v.Fan.transform.localRotation = Quaternion.Euler(0, 0, v.FanAngle);
                 }
@@ -198,15 +199,16 @@ namespace Throughput.Game
                     if (isPdu && !dark && _world.PduLoad(b.Id) >= spec.PduCapKw * Balance.AmberAt)
                         baseAlpha = 0.5f + 0.4f * Mathf.PingPong(Time.time * 3f, 1f);
                     Color rc = isPdu ? GameTheme.PduRing : GameTheme.CracRing;
-                    rc.a = dark || off ? 0.03f : baseAlpha;
+                    rc.a = dark || off || unpowered ? 0.03f : baseAlpha;
                     v.RingSr.color = rc;
                 }
 
                 // Badge
                 string badge = ""; Color bc = GameTheme.TextDim;
-                if (b.State == BuildingState.Booting) { badge = "booting"; bc = GameTheme.TextDim; }
-                else if (dark) { badge = "DARK"; bc = GameTheme.Danger; }
+                if (dark) { badge = "DARK"; bc = GameTheme.Danger; }
                 else if (off) { badge = "OFF"; bc = GameTheme.TextDim; }
+                else if (unpowered) { badge = "NO POWER"; bc = GameTheme.Warn; }
+                else if (b.State == BuildingState.Booting) { badge = "booting"; bc = GameTheme.TextDim; }
                 else if (b.State == BuildingState.HeatShutdown) { badge = "OVERHEAT"; bc = GameTheme.Danger; }
                 else if (b.NoUplinkFlag && spec.IsRack) { badge = "NO UPLINK"; bc = GameTheme.JobCyan; }
                 else if (spec.IsRack && b.TileTemp >= Balance.HotTemp) { badge = $"{b.TileTemp:0}° -50%"; bc = GameTheme.Danger; }

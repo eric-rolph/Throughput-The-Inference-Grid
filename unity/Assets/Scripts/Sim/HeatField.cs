@@ -17,10 +17,10 @@ namespace Throughput.Sim
 
             foreach (Building b in buildings)
             {
-                if (b.Removed || b.ToggledOff || b.State == BuildingState.TrippedDark) continue;
+                if (b.Removed || !b.HasPower) continue;
                 BuildingSpec spec = b.Spec;
 
-                if (spec.HeatKw > 0f && b.State != BuildingState.Booting)
+                if (spec.HeatKw > 0f && b.State == BuildingState.Online)
                 {
                     float amp = spec.HeatKw * Balance.DegPerHeatKw;
                     if (b.TileTemp >= Balance.HotTemp) amp *= Balance.RunawayMult; // thermal runaway
